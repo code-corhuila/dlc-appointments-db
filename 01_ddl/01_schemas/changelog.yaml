@@ -1,1 +1,16 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: ddl-schemas-001
+      author: DanielPerez1822
+      labels: "ddl,schemas"
+      comment: "Create the PostgreSQL schema owned by the Appointments persistence component."
+      changes:
+        - sqlFile:
+            path: 001_create_appointments_schema.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/01_schemas/001_create_appointments_schema.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
