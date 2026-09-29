@@ -14,3 +14,4 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/01_schemas/001_create_appointments_schema.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+            

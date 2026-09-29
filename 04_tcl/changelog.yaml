@@ -10,3 +10,4 @@ databaseChangeLog:
   - include:
       file: 02_release_tags/changelog.yaml
       relativeToChangelogFile: true
+      
