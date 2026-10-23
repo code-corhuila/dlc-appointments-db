@@ -1,0 +1,33 @@
+# Disposable verification fixture, not DI LUCCA production topology.
+services:
+  postgres:
+    image: ${DB_TEST_POSTGRES_IMAGE:-postgres:16.13}
+    environment:
+      POSTGRES_DB: appointments_bootstrap_test
+      POSTGRES_USER: bootstrap_test
+      POSTGRES_PASSWORD: ${DB_TEST_PASSWORD:?Run scripts/verify-db.ps1}
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./init-test.sql:/docker-entrypoint-initdb.d/001-metadata.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bootstrap_test -d appointments_bootstrap_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  liquibase:
+    image: ${DB_TEST_LIQUIBASE_IMAGE:-liquibase/liquibase:4.33.0}
+    profiles: ["tools"]
+    working_dir: /liquibase/changelog
+    volumes:
+      - ../:/liquibase/changelog:ro
+    environment:
+      LIQUIBASE_COMMAND_URL: jdbc:postgresql://postgres:5432/appointments_bootstrap_test
+      LIQUIBASE_COMMAND_USERNAME: bootstrap_test
+      LIQUIBASE_COMMAND_PASSWORD: ${DB_TEST_PASSWORD:?Run scripts/verify-db.ps1}
+      LIQUIBASE_COMMAND_CHANGELOG_FILE: changelog/changelog-master.yaml
+      LIQUIBASE_LIQUIBASE_SCHEMA_NAME: appointments_liquibase
+      LIQUIBASE_ANALYTICS_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
