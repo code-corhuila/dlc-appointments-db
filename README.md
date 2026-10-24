@@ -67,7 +67,8 @@ The Compose fixture has no published ports or external database URL. It uses a
 unique project, temporary database storage and a generated per-run test password.
 Cleanup removes only that invocation's project in a finally block. No real
 credentials or .env file are needed; do not copy production credentials here.
-The sample environment file documents optional test image overrides. Export them
+The sample environment file documents test images. Isolation preflight currently
+accepts only the fixed versions below; changing them requires review. Export them
 in the shell; the runner does not load .env.example automatically.
 
 Images postgres:16.13 and liquibase/liquibase:4.33.0 are fixed **proposals for
@@ -78,7 +79,8 @@ Tags, JDBC compatibility and successful pulls still require runtime verification
 
 ADR-002/003/007/008 preserve one shared production PostgreSQL with owner schemas.
 This isolated fixture does not replace that architecture. Its init-test.sql
-creates only appointments_liquibase for technical history/locks, automatically
+creates appointments_liquibase for technical history/locks and provisions the
+isolated extension fixture described below, automatically
 before Liquibase starts. Nothing is created manually in a shared database.
 This is a test-only metadata convention; production metadata placement, grants,
 owner-scoped credentials and bootstrap remain unapproved and must be coordinated.
@@ -123,3 +125,36 @@ syntax and Compose config pass. Temporary-copy probes accept two changesets and
 reject identity mismatches, non-HALT preconditions, CASCADE and unreachable YAML.
 The full runner exits 1 at Docker preflight (permission denied); no PostgreSQL,
 Liquibase lifecycle, upgrade or appointment constraint tests executed in Codex.
+
+### DB-03B-PRE: isolated extension fixture
+
+The user authorized btree_gist installation ONLY in newly created disposable test
+fixtures. This is not a production extension migration. Init runs on empty tmpfs
+before verification snapshots. Namespace: appointments_extensions; schema and
+extension owner: bootstrap_test (the fixture initdb superuser). No persistent data
+volume, host ports, external network or configurable external JDBC URL is used.
+The default network is internal. Preflight inspects effective Compose config,
+rejects unexpected services/mounts/images/connections, requires a fresh unique
+project and verifies the running PostgreSQL data mount is tmpfs. Cleanup checks
+that no containers or networks with that project label remain.
+
+Catalog assertions require btree_gist, the namespace/owner, the default UUID GiST
+opclass gist_uuid_ops and its pg_depend extension membership. Namespace USAGE and
+visibility under an explicit transaction-local search_path are checked. A future
+migration must qualify appointments_extensions.gist_uuid_ops or deliberately set
+a trusted search_path; no implicit production search_path is approved here.
+The normal runner compares namespace/extension snapshots after provisioning and
+repeats extension assertions through baseline, updates, rollback and reconstruction.
+It never removes the extension as a domain rollback. DB-01/DB-02 SQL and checksums
+remain unchanged. Existing Windows CMD runner commands apply to both baselines.
+
+Production extension owner, namespace, permissions, provisioning and version
+approval remain pending. This fixture superuser is not a production permission
+model. No appointment table, business index or constraint is introduced.
+
+Local evidence (2026-10-24): PowerShell syntax, static DB01/DB02 selections and
+effective Compose isolation checks PASS. Negative configuration probes reject
+published ports, external JDBC URLs, non-tmpfs data paths and non-internal networks.
+Both full baseline runners are BLOCKED at Docker preflight (permission denied).
+Extension installation/catalog assertions, migration lifecycle and cleanup checks
+are implemented but UNEXECUTED here; no test containers were started by Codex.
