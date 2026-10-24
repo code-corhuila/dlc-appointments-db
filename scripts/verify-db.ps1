@@ -6,6 +6,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'fixture-isolation.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -136,7 +137,16 @@ function Query([string]$Sql) {
     $result = @(Invoke-Compose exec -T postgres psql -X -A -t -v ON_ERROR_STOP=1 -U bootstrap_test -d appointments_bootstrap_test -c $Sql)
     return ($result -join "`n").Trim()
 }
+function Assert-TestExtension {
+    $installed = Query "SELECT count(*) FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='btree_gist' AND n.nspname='appointments_extensions' AND pg_get_userbyid(e.extowner)='bootstrap_test' AND pg_get_userbyid(n.nspowner)='bootstrap_test';"
+    if ($installed -ne '1') { throw 'Missing extension or unexpected technical namespace/owner' }
+    $member = Query "SELECT count(*) FROM pg_opclass c JOIN pg_am a ON a.oid=c.opcmethod JOIN pg_namespace n ON n.oid=c.opcnamespace JOIN pg_depend d ON d.classid='pg_opclass'::regclass AND d.objid=c.oid AND d.deptype='e' AND d.refclassid='pg_extension'::regclass JOIN pg_extension e ON e.oid=d.refobjid WHERE e.extname='btree_gist' AND a.amname='gist' AND c.opcname='gist_uuid_ops' AND c.opcintype='uuid'::regtype AND c.opcdefault AND n.nspname='appointments_extensions' AND pg_get_userbyid(c.opcowner)='bootstrap_test' AND has_schema_privilege(current_user,n.oid,'USAGE');"
+    if ($member -ne '1') { throw 'GiST UUID opclass membership, ownership or qualified resolution failed' }
+    $visible = @(Invoke-Compose exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U bootstrap_test -d appointments_bootstrap_test -c 'BEGIN; SET LOCAL search_path=pg_catalog,appointments_extensions;' -c "SELECT pg_opclass_is_visible(oid) FROM pg_opclass WHERE opcname='gist_uuid_ops' AND opcnamespace='appointments_extensions'::regnamespace;" -c 'ROLLBACK;')
+    if (($visible -join "`n").Trim() -cne 't') { throw 'UUID opclass not resolvable in explicit test search_path' }
+}
 function Assert-State($Expected) {
+    Assert-TestExtension
     $Present = $Expected.schemaPresent
     $owner = Query "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='appointments';"
     if (($Present -and $owner -ne $Expected.schemaOwner) -or (!$Present -and $owner -ne '')) { throw 'Unexpected schema existence/owner' }
@@ -157,7 +167,7 @@ function Assert-History($Expected) {
 function Snapshot-History([int]$Count) {
     Query "SELECT coalesce(json_agg(d ORDER BY orderexecuted)::text,'[]') FROM (SELECT * FROM appointments_liquibase.databasechangelog ORDER BY orderexecuted LIMIT $Count) d;"
 }
-$isolationSql = "SELECT (SELECT coalesce(json_agg(s ORDER BY nspname)::text,'[]') FROM (SELECT nspname,nspowner,nspacl FROM pg_namespace WHERE nspname NOT IN ('appointments','appointments_liquibase')) s) || (SELECT coalesce(json_agg(e ORDER BY extname)::text,'[]') FROM (SELECT extname,extowner,extnamespace,extversion FROM pg_extension) e);"
+$isolationSql = "SELECT (SELECT coalesce(json_agg(s ORDER BY nspname)::text,'[]') FROM (SELECT nspname,nspowner,nspacl FROM pg_namespace WHERE nspname NOT IN ('appointments','appointments_liquibase')) s) || (SELECT coalesce(json_agg(e ORDER BY extname)::text,'[]') FROM (SELECT oid,extname,extowner,extnamespace,extversion FROM pg_extension) e);"
 try {
     & docker info --format '{{.ServerVersion}}'
     if ($LASTEXITCODE -ne 0) { throw 'Docker daemon inaccessible; no migration tests executed' }
@@ -165,9 +175,21 @@ try {
         $project = 'apt-verify-' + [guid]::NewGuid().ToString('N').Substring(0,12)
         $started = $false
         try {
-            Invoke-Compose config --quiet
+            $config = (Invoke-Compose --profile tools config --format json) -join "`n" | ConvertFrom-Json
+            Assert-FixtureIsolation $config $project $repo
+            if (@(Invoke-Compose ps --all --quiet).Count) { throw 'Refuse existing project containers' }
             $started = $true
             Invoke-Compose up -d --wait --wait-timeout 90 postgres
+            $container = (Invoke-Compose ps --quiet postgres).Trim()
+            $inspectJson = & docker inspect --type container --format '{{json .}}' $container
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect PostgreSQL container' }
+            $inspection = ($inspectJson -join "`n") | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $inspection.Config.Labels.'com.docker.compose.project' -cne $project) { throw 'Wrong fixture container identity' }
+            Assert-DisposablePostgresStorage $inspection
+            $filesystem = (Invoke-Compose exec -T postgres stat -f -c '%T' /var/lib/postgresql/data | Out-String).Trim()
+            if ($filesystem -cne 'tmpfs') { throw "Refuse PostgreSQL data filesystem: $filesystem (expected tmpfs)" }
+            if ((Query 'SHOW data_directory;') -cne '/var/lib/postgresql/data') { throw 'Unexpected effective PostgreSQL data_directory' }
+            Assert-TestExtension # Provisioning is complete BEFORE any verification snapshot.
             $initialIsolation = Query $isolationSql
             Assert-State ([pscustomobject]@{schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()})
             $before = [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()}
@@ -213,6 +235,12 @@ try {
             if ($started) {
                 & docker compose --project-name $project --file $compose down --volumes --remove-orphans
                 if ($LASTEXITCODE -ne 0) { throw "Fixture cleanup failed: $project" }
+                $leftContainers = @(& docker ps -a -q --filter "label=com.docker.compose.project=$project")
+                if ($LASTEXITCODE -ne 0) { throw 'Cannot check container cleanup' }
+                $leftNetworks = @(& docker network ls -q --filter "label=com.docker.compose.project=$project")
+                if ($LASTEXITCODE -ne 0 -or $leftContainers.Count -or $leftNetworks.Count) { throw 'Fixture cleanup left resources' }
+                $leftVolumes = @(& docker volume ls -q --filter "label=com.docker.compose.project=$project")
+                if ($LASTEXITCODE -ne 0 -or $leftVolumes.Count) { throw 'Fixture cleanup left project volumes' }
             }
         }
     }
