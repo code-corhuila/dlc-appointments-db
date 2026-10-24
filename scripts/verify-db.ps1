@@ -1,4 +1,8 @@
-param([switch]$StaticOnly)
+param(
+    [switch]$StaticOnly,
+    [ValidateSet('DB01','DB02')][string]$Baseline = 'DB01',
+    [string]$ExpectedManifest = 'scripts/fixtures/db02-expected.json'
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -7,6 +11,19 @@ $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
 $author = 'bsbedoya'
 $schemaFile = '01_ddl/01_schemas/changelog.yaml'
+$identities = [Collections.Generic.List[string]]::new()
+function Identity($Changesets) {
+    (@($Changesets) | ForEach-Object { "$($_.id)|$($_.author)|$($_.filename)" }) -join "`n"
+}
+$target = Get-Content -LiteralPath (Join-Path $repo $ExpectedManifest) -Raw | ConvertFrom-Json
+$baselineState = if ($Baseline -eq 'DB02') {
+    Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-expected.json') -Raw | ConvertFrom-Json
+} else { [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()} }
+if ($target.schemaPresent -isnot [bool] -or $target.schemaOwner -ne 'bootstrap_test') { throw 'Invalid test schema expectation' }
+foreach ($name in $target.relations) { if ($name -notmatch '^appointments\.[a-z_][a-z0-9_]*:[rSipvmfc]$') { throw 'Relations must be explicitly Appointments-owned' } }
+$targetKeys = @(Identity $target.changesets) -join "`n"
+$baselineKeys = Identity $baselineState.changesets
+if ($baselineKeys -and $targetKeys -ne $baselineKeys -and !$targetKeys.StartsWith($baselineKeys+"`n")) { throw 'Baseline is not a prefix of target history' }
 
 function Check-Changelog([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
@@ -32,9 +49,34 @@ function Check-Changelog([string]$Path) {
         }
         if (@($lines | Where-Object { $_ -eq '            relativeToChangelogFile: true' }).Count -ne 2 -or
             @($lines | Where-Object { $_ -eq '            splitStatements: false' }).Count -ne 2) { throw 'Invalid SQL file options' }
+        $identities.Add("$id|$author|$schemaFile")
         return
     }
     if ($content -match '^databaseChangeLog:\s*\[\]\s*$') { return }
+    if ($content -match '(?m)^  - changeSet:') {
+        if ($lines[0] -ne 'databaseChangeLog:' -or $content -match '(?m)^  - include:') { throw 'Unsupported mixed changelog' }
+        foreach ($block in ([regex]::Split($content, '(?m)(?=^  - changeSet:)') | Select-Object -Skip 1)) {
+            $fields = @{}
+            foreach ($key in @('id','author')) {
+                $matchesForKey = [regex]::Matches($block, "(?m)^      ${key}: ([a-zA-Z0-9_.-]+)$")
+                if ($matchesForKey.Count -ne 1) { throw "Missing/duplicate $key in $Path" }
+                $fields[$key] = $matchesForKey[0].Groups[1].Value
+            }
+            foreach ($pattern in @('(?m)^      comment: ".+"$', '(?m)^      labels: ".+"$', '(?m)^      changes:$', '(?m)^      rollback:$')) {
+                if ($block -notmatch $pattern) { throw "Missing changeset declaration: $Path" }
+            }
+            $paths = @([regex]::Matches($block, '(?m)^            path: (.+)$'))
+            if ($paths.Count -lt 2 -or ([regex]::Matches($block,'(?m)^            relativeToChangelogFile: true$')).Count -ne $paths.Count -or
+                ([regex]::Matches($block,'(?m)^            splitStatements: false$')).Count -ne $paths.Count) { throw 'Require relative external SQL and rollback' }
+            foreach ($sql in $paths) {
+                $resolvedSql = [IO.Path]::GetFullPath((Join-Path (Split-Path $resolved) $sql.Groups[1].Value))
+                if (!$resolvedSql.StartsWith($repo+[IO.Path]::DirectorySeparatorChar) -or !(Test-Path -LiteralPath $resolvedSql -PathType Leaf)) { throw 'Invalid SQL reference' }
+            }
+            $filename = [IO.Path]::GetRelativePath($repo,$resolved).Replace('\','/')
+            $identities.Add("$($fields.id)|$($fields.author)|$filename")
+        }
+        return
+    }
     if ($lines[0] -ne 'databaseChangeLog:') { throw "Unexpected root: $Path" }
     $files = @($lines | Where-Object { $_ -match '^      file: ' })
     $relative = @($lines | Where-Object { $_ -eq '      relativeToChangelogFile: true' })
@@ -65,7 +107,9 @@ $actual = @([regex]::Matches($ddl, 'file: ([^/]+)/changelog.yaml') | ForEach-Obj
 if (($actual -join ',') -ne ($expected -join ',')) { throw 'DDL order differs from Annex A' }
 $schema = Get-Content -LiteralPath (Join-Path $repo $schemaFile) -Raw
 if ($schema -notmatch [regex]::Escape('sql: "SELECT count(*) FROM pg_namespace WHERE nspname = ''appointments''"')) { throw 'Missing absent-schema precondition' }
-if (@($all | Select-String -Pattern '^  - changeSet:').Count -ne 1) { throw 'DB-02 expects one changeset' }
+if (($identities -join "`n") -cne $targetKeys) { throw 'Changelogs differ from explicit expected identities/order' }
+$ids = @($identities | ForEach-Object { ($_ -split '\|')[0] })
+if (@($ids | Select-Object -Unique).Count -ne $ids.Count) { throw 'Duplicate changeset ID' }
 foreach ($pair in @(
     @('01_ddl/01_schemas/001_create_schema_appointments.sql','CREATE SCHEMA appointments AUTHORIZATION CURRENT_USER;'),
     @('05_rollbacks/01_ddl/01_schemas/001_create_schema_appointments.rollback.sql','DROP SCHEMA appointments RESTRICT;'))) {
@@ -73,8 +117,12 @@ foreach ($pair in @(
     if ($sql -cne $pair[1]) { throw "Unexpected SQL scope: $($pair[0])" }
 }
 if ((Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db01-baseline.yml') -Raw).Trim() -ne 'databaseChangeLog: []') { throw 'DB-01 baseline must remain empty' }
-Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; one schema-only changeset."
-Write-Host 'Static checks cover DB-02 structure and SQL scope; Liquibase validates YAML at runtime.'
+$baselineFixture = (Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-baseline.yml') -Raw).Replace("`r`n","`n").Trim()
+if ($baselineFixture -cne "databaseChangeLog:`n  - include:`n      file: 01_ddl/01_schemas/changelog.yaml`n      relativeToChangelogFile: false") {
+    throw 'DB-02 baseline must reference the canonical schema changelog without SQL copies'
+}
+Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
+Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
 
 $compose = Join-Path $repo 'deploy/compose.yml'
@@ -88,66 +136,79 @@ function Query([string]$Sql) {
     $result = @(Invoke-Compose exec -T postgres psql -X -A -t -v ON_ERROR_STOP=1 -U bootstrap_test -d appointments_bootstrap_test -c $Sql)
     return ($result -join "`n").Trim()
 }
-function Assert-State([bool]$Present) {
+function Assert-State($Expected) {
+    $Present = $Expected.schemaPresent
     $owner = Query "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='appointments';"
-    if (($Present -and $owner -ne 'bootstrap_test') -or (!$Present -and $owner -ne '')) { throw 'Unexpected schema existence/owner' }
-    $objects = Query "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema','appointments_liquibase') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%';"
+    if (($Present -and $owner -ne $Expected.schemaOwner) -or (!$Present -and $owner -ne '')) { throw 'Unexpected schema existence/owner' }
+    $objects = Query "SELECT n.nspname||'.'||c.relname||':'||c.relkind::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema','appointments_liquibase') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%' ORDER BY n.nspname,c.relname;"
     $other = Query "SELECT count(*) FROM pg_namespace WHERE nspname IN ('iam','patients','billing');"
-    if ($objects -ne '0' -or $other -ne '0') { throw 'Unexpected business object or unrelated owner schema' }
+    if ($objects -cne ((@($Expected.relations) | Sort-Object) -join "`n") -or $other -ne '0') { throw 'Unexpected business object or unrelated owner schema' }
     if ((Query 'SELECT current_database();') -ne 'appointments_bootstrap_test') { throw 'Wrong test database' }
     if ((Query $isolationSql) -cne $initialIsolation) { throw 'Unrelated namespace/extension changed' }
 }
 function Get-MetadataIdentity {
     Query "SELECT oid::text FROM pg_class WHERE oid IN (to_regclass('appointments_liquibase.databasechangelog'),to_regclass('appointments_liquibase.databasechangeloglock')) ORDER BY oid;"
 }
-function Assert-History([int]$Count) {
-    if ((Query 'SELECT count(*) FROM appointments_liquibase.databasechangelog;') -ne "$Count") { throw 'Unexpected history size' }
-    if ($Count -eq 1) {
-        $match = Query "SELECT count(*) FROM appointments_liquibase.databasechangelog WHERE id='$id' AND author='$author' AND filename='$schemaFile' AND exectype='EXECUTED';"
-        if ($match -ne '1') { throw 'Unexpected changeset identity; rollback forbidden' }
-    }
+function Assert-History($Expected) {
+    $actual = Query 'SELECT id||''|''||author||''|''||filename FROM appointments_liquibase.databasechangelog ORDER BY orderexecuted;'
+    if ($actual -cne (Identity $Expected.changesets)) { throw 'Unexpected history identity/order; rollback forbidden' }
+    if ((Query "SELECT count(*) FROM appointments_liquibase.databasechangelog WHERE exectype <> 'EXECUTED';") -ne '0') { throw 'Unexpected execution type' }
+}
+function Snapshot-History([int]$Count) {
+    Query "SELECT coalesce(json_agg(d ORDER BY orderexecuted)::text,'[]') FROM (SELECT * FROM appointments_liquibase.databasechangelog ORDER BY orderexecuted LIMIT $Count) d;"
 }
 $isolationSql = "SELECT (SELECT coalesce(json_agg(s ORDER BY nspname)::text,'[]') FROM (SELECT nspname,nspowner,nspacl FROM pg_namespace WHERE nspname NOT IN ('appointments','appointments_liquibase')) s) || (SELECT coalesce(json_agg(e ORDER BY extname)::text,'[]') FROM (SELECT extname,extowner,extnamespace,extversion FROM pg_extension) e);"
 try {
     & docker info --format '{{.ServerVersion}}'
     if ($LASTEXITCODE -ne 0) { throw 'Docker daemon inaccessible; no migration tests executed' }
     foreach ($scenario in @('empty','upgrade')) {
-        $project = 'apt-db02-' + [guid]::NewGuid().ToString('N').Substring(0,12)
+        $project = 'apt-verify-' + [guid]::NewGuid().ToString('N').Substring(0,12)
         $started = $false
         try {
             Invoke-Compose config --quiet
             $started = $true
             Invoke-Compose up -d --wait --wait-timeout 90 postgres
             $initialIsolation = Query $isolationSql
-            Assert-State $false
+            Assert-State ([pscustomobject]@{schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()})
+            $before = [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()}
+            $preservedHistory = '[]'
             if ($scenario -eq 'upgrade') {
-                Invoke-Compose run --rm liquibase update --changelog-file=scripts/fixtures/db01-baseline.yml
-                Assert-History 0
+                $before = $baselineState
+                $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
+                Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
+                Assert-History $before
+                $preservedHistory = Snapshot-History @($before.changesets).Count
+                Assert-State $before
                 $baselineMetadata = Get-MetadataIdentity
-                if (@($baselineMetadata -split "`n").Count -ne 2) { throw 'DB-01 baseline did not initialize metadata' }
-                Assert-State $false
+                if (@($baselineMetadata -split "`n").Count -ne 2) { throw 'Baseline metadata missing' }
             }
             Invoke-Compose run --rm liquibase validate
             Invoke-Compose run --rm liquibase update
-            Assert-History 1
-            Assert-State $true
+            Assert-History $target
+            Assert-State $target
             $metadata = Get-MetadataIdentity
             if (@($metadata -split "`n").Count -ne 2) { throw 'Metadata tables missing' }
-            if ($scenario -eq 'upgrade' -and $metadata -cne $baselineMetadata) { throw 'Upgrade replaced DB-01 metadata' }
-            $historyBefore = Query 'SELECT row_to_json(d)::text FROM appointments_liquibase.databasechangelog d;'
+            if ($scenario -eq 'upgrade' -and $metadata -cne $baselineMetadata) { throw 'Upgrade replaced baseline metadata' }
+            $historyBefore = Snapshot-History @($target.changesets).Count
+
             Invoke-Compose run --rm liquibase update
-            Assert-History 1
-            if ((Query 'SELECT row_to_json(d)::text FROM appointments_liquibase.databasechangelog d;') -cne $historyBefore) { throw 'Second update changed history' }
-            Assert-History 1 # Exact identity and singleton history checked immediately before rollback.
-            Invoke-Compose run --rm liquibase rollback-count --count=1
-            Assert-State $false
-            Assert-History 0
-            if ((Get-MetadataIdentity) -cne $metadata) { throw 'Rollback replaced/deleted metadata' }
-            Invoke-Compose run --rm liquibase update
-            Assert-State $true
-            Assert-History 1
-            if ((Get-MetadataIdentity) -cne $metadata) { throw 'Reconstruction replaced metadata' }
-            Write-Host "PASS: $scenario deployment, repeat update, rollback, reconstruction, isolation."
+            Assert-History $target
+            if ((Snapshot-History @($target.changesets).Count) -cne $historyBefore) { throw 'Second update changed history' }
+            Assert-History $target # Exact identities/order checked immediately before rollback.
+            $rollbackCount = @($target.changesets).Count - @($before.changesets).Count
+            if ($rollbackCount -gt 0) {
+                Invoke-Compose run --rm liquibase rollback-count "--count=$rollbackCount"
+                Assert-State $before
+                Assert-History $before
+                if ((Snapshot-History @($before.changesets).Count) -cne $preservedHistory) { throw 'Rollback changed baseline history' }
+                if ((Get-MetadataIdentity) -cne $metadata) { throw 'Rollback replaced/deleted metadata' }
+                Invoke-Compose run --rm liquibase update
+                Assert-State $target
+                Assert-History $target
+                if ((Get-MetadataIdentity) -cne $metadata) { throw 'Reconstruction replaced metadata' }
+            } else { Write-Host 'NO NEW CHANGESETS: baseline equals target; rollback/reconstruction not exercised here.' }
+            if ((Snapshot-History @($before.changesets).Count) -cne $preservedHistory) { throw 'Upgrade/reconstruction changed baseline history' }
+            Write-Host "PASS: $scenario expected target, repeat update and isolation verified; rollback delta=$rollbackCount."
         } finally {
             if ($started) {
                 & docker compose --project-name $project --file $compose down --volumes --remove-orphans
