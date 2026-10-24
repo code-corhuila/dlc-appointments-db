@@ -30,3 +30,19 @@ btree_gist is required for UUID equality in GiST. Its owner, namespace, permissi
 and test provisioning must be coordinated separately. DB-03A does not install it.
 Application authorization, valid transitions, patient activity and availability
 are separate workflow guarantees, not outcomes proved by these constraint cases.
+
+## Executable harness interface (DB-03B-A)
+
+scripts/pg-test-harness.ps1 is dot-sourced by the validated fixture runner.
+Use Invoke-PgHarnessCommand for BEGIN/COMMIT/ROLLBACK; Send-PgHarnessStatement
+starts trusted INSERT/UPDATE SQL asynchronously. Wait-PgHarnessBlocked observes
+the first backend blocking the second; Receive-PgHarnessResult and
+Assert-PgHarnessResult require exact SQLSTATE/constraint (23P01 plus the approved
+exclusion name for overlaps). Never accept another error or timeout as success.
+Start both transactions before writes; release the first with COMMIT or ROLLBACK,
+then inspect the second result. Roll back test data and close every session.
+Nonblocking cases use the same statement/result assertions without a blocking
+barrier: different dentists, adjacency, terminal states and invalid intervals.
+Include status-update and rescheduling conflicts, and preservation of old values
+after rejection. Concrete SQL, names and state fixtures remain DEFERRED.
+Advisory-lock self-tests validate harness coordination only, not appointment rules.
