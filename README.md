@@ -24,7 +24,7 @@ rule.
 
 Full policy: `00-governance/branching-policy.md` in `dlc-docs`.
 
-## DB-01 verification runner
+## DB-02 schema migration and verification
 
 Requires PowerShell 7, Docker Engine and Docker Compose v2+.
 Run from the repository root (Windows or Linux):
@@ -34,15 +34,16 @@ pwsh -File scripts/verify-db.ps1 -StaticOnly
 pwsh -File scripts/verify-db.ps1
 ```
 
-The first command checks the include-only DB-01 grammar, reachability and DDL
-order without Docker. It intentionally rejects changesets: extend the verifier
-in DB-02 before introducing migrations. It is not a general YAML parser.
-The second checks the daemon, Compose configuration, starts a new PostgreSQL,
-runs Liquibase validate/update/update, inspects history, then runs update again.
-With zero changesets, rollback is explicitly not applicable, not a tested success.
-Catalog assertions reject business objects, other owner schemas and extensions.
-CI runs both commands for pull requests and pushes to develop.
-
+The first command checks changelog reachability, DDL order, DB-02 metadata,
+external SQL paths and schema-only SQL scope. It is not a general YAML parser;
+Liquibase validate is authoritative. CI runs both commands for PRs and develop.
+The full runner uses separate empty-store and DB-01-upgrade fixtures. Each checks
+validate/update/update, exact history identity, rollback-count --count=1 and update,
+schema existence/owner, unchanged history on retry, metadata OIDs and isolation.
+The empty baseline in scripts/fixtures/db01-baseline.yml represents DB-01's zero
+changesets; it is a test baseline, not an archived Git revision. Upgrade executes
+that baseline, then DB-02 against the SAME database and history/lock tables.
+No baseline container/database is reset between those two updates.
 The Compose fixture has no published ports or external database URL. It uses a
 unique project, temporary database storage and a generated per-run test password.
 Cleanup removes only that invocation's project in a finally block. No real
@@ -64,17 +65,26 @@ This is a test-only metadata convention; production metadata placement, grants,
 owner-scoped credentials and bootstrap remain unapproved and must be coordinated.
 Do not use this test superuser or runner against shared environments.
 
-No business schema, business tables, production users, extensions or changesets are introduced.
-Empty-changelog success does not prove HU-APT-001 persistence. DB-02 should resolve
-metadata ownership and add the first schema migration with explicit SQL rollback,
-then extend CI to test actual own-change rollback and reconstruction. Rollback of
-populated shared environments remains a separate reviewed recovery operation.
+DB-02 registers 001-appointments-create-schema, author bsbedoya, with labels
+"HU-APT-001,ddl,schemas". The author was verified on 2026-10-23 via the GitHub
+users API: login bsbedoya, name Brayan Smith Bedoya, account ID 160141855
+(https://api.github.com/users/bsbedoya). The user authorized this initial ID;
+coordination of numbering with the migration owner is still required.
 
-### Local evidence (2026-10-23)
+SQL: CREATE SCHEMA appointments AUTHORIZATION CURRENT_USER;
+CURRENT_USER becomes schema owner and requires CREATE on the target database.
+Production migration role/ownership and runtime privileges remain pending.
+The precondition HALTs if appointments exists; it never silently adopts a schema.
+Rollback: DROP SCHEMA appointments RESTRICT; fails if objects remain, preserves
+Liquibase metadata, and must not be forced with CASCADE or manual object removal.
+No tables, indexes, extensions, roles or grants are introduced by DB-02.
+This is schema infrastructure only, not completed HU-APT-001 or production readiness.
 
-- Docker client 29.8.0; Compose v5.5.1.
-- Static verifier: PASS, 27 reachable changelogs and zero changesets.
-- PowerShell syntax parser and docker compose config --quiet: PASS.
-- Missing include, invalid leaf and unreachable file rejection: PASS in temp copies.
-- Full runner: exit 1 at daemon preflight (Docker Linux engine pipe unavailable).
-- No database started; Liquibase validate/update/rollback and CI execution unverified.
+### Local DB-02 evidence (2026-10-23)
+
+- RED: required migration and rollback files were absent before implementation.
+- Static checks, PowerShell syntax and Compose configuration: PASS.
+- Negative temp-copy probes (author, HALT, CASCADE, missing SQL): PASS.
+- Runtime preflight: Docker Linux engine access denied; no migration tests executed.
+- Empty deployment, rollback, reconstruction, DB-01 upgrade and remote CI: UNVERIFIED.
+- Run the full runner locally with an accessible Docker daemon before acceptance.

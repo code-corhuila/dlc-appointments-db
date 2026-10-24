@@ -1,1 +1,24 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 001-appointments-create-schema
+      author: bsbedoya
+      labels: "HU-APT-001,ddl,schemas"
+      comment: "Create Appointments schema: CURRENT_USER owns it; production role remains pending."
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_namespace WHERE nspname = 'appointments'"
+      changes:
+        - sqlFile:
+            path: 001_create_schema_appointments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/01_schemas/001_create_schema_appointments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
