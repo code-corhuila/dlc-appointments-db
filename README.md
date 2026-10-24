@@ -158,3 +158,34 @@ published ports, external JDBC URLs, non-tmpfs data paths and non-internal netwo
 Both full baseline runners are BLOCKED at Docker preflight (permission denied).
 Extension installation/catalog assertions, migration lifecycle and cleanup checks
 are implemented but UNEXECUTED here; no test containers were started by Codex.
+
+### DB-03B-A: integrity/concurrency harness (PowerShell 7+)
+
+From Windows CMD:
+```bat
+pwsh -NoProfile -File scripts\test-pg-harness.ps1
+pwsh -NoProfile -File scripts\verify-db.ps1 -Baseline DB01
+pwsh -NoProfile -File scripts\verify-db.ps1 -Baseline DB02
+```
+
+The first command tests child-process transport with simulated responses, not
+PostgreSQL. The full runner executes the harness only after fixture/storage
+validation. Two persistent psql worker sessions and an independent observer use
+explicit transactions. pg_blocking_pids proves blocking; advisory transaction
+locks test release after COMMIT and ROLLBACK without creating business objects.
+A deliberately expired client deadline must throw, then recover after release.
+No timeout counts as an exclusion conflict. Server statement timeout is 10s.
+
+Trusted fixture SQL uses anonymous DO exception subtransactions, capturing
+RETURNED_SQLSTATE and CONSTRAINT_NAME into marked JSON notices. Assertions require
+both exact values; failed statements roll back their subtransaction. Roll back
+the surrounding test transaction after each integrity case. Query cancellation
+and outer SQL errors fail the harness. No helper tables/functions are persisted.
+Session shutdown is bounded, with backend termination/forced process cleanup as
+fallback; the outer runner retains project-scoped cleanup and isolation checks.
+This helper has no standalone database URL or external-container CLI option.
+
+Local evidence: syntax, DB01/DB02 static checks and transport tests pass.
+Docker daemon access is denied in Codex. Real sessions, blocking, SQL diagnostics,
+extension checks and fixture cleanup are UNVERIFIED here. All appointment cases
+remain DEFERRED until DB-03B-B creates the protected table.
