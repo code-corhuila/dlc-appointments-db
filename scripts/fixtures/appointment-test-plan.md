@@ -1,6 +1,6 @@
-# Deferred appointment constraint suite
+# Appointment constraint suite
 
-NOT EXECUTED: no appointment table or exclusion constraint exists in DB-03A.
+NOT EXECUTED here: DB-03B-B implements the protected table; Docker integration is blocked.
 Before enabling these cases, migrate the real DB-03B table and verify its catalog
 columns, named CHECK constraints and partial GiST exclusion. Never count absence
 of the table as a passing test. Use synthetic UUIDs and explicit offset timestamps.
@@ -44,5 +44,5 @@ then inspect the second result. Roll back test data and close every session.
 Nonblocking cases use the same statement/result assertions without a blocking
 barrier: different dentists, adjacency, terminal states and invalid intervals.
 Include status-update and rescheduling conflicts, and preservation of old values
-after rejection. Concrete SQL, names and state fixtures remain DEFERRED.
+after rejection. Concrete SQL/names/state fixtures are in appointment-tests.ps1; execution remains BLOCKED here.
 Advisory-lock self-tests validate harness coordination only, not appointment rules.

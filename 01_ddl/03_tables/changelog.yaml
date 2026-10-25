@@ -1,1 +1,34 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 002-appointments-create-appointments
+      author: bsbedoya
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create appointments and immediate active-dentist exclusion atomically; btree_gist is an external dependency."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='appointments' AND t.typname='appointments'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments'"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace JOIN pg_catalog.pg_opclass c ON c.opcnamespace=n.oid JOIN pg_catalog.pg_am a ON a.oid=c.opcmethod JOIN pg_catalog.pg_depend d ON d.classid='pg_catalog.pg_opclass'::pg_catalog.regclass AND d.objid=c.oid AND d.refclassid='pg_catalog.pg_extension'::pg_catalog.regclass AND d.refobjid=e.oid AND d.deptype='e' WHERE e.extname='btree_gist' AND c.opcname='gist_uuid_ops' AND c.opcintype='pg_catalog.uuid'::pg_catalog.regtype AND a.amname='gist' AND has_schema_privilege(current_user,n.oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 001_create_appointments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/001_create_appointments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
