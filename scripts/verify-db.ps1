@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixture-isolation.ps1')
+. (Join-Path $PSScriptRoot 'pg-test-harness.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -211,6 +212,9 @@ try {
             $metadata = Get-MetadataIdentity
             if (@($metadata -split "`n").Count -ne 2) { throw 'Metadata tables missing' }
             if ($scenario -eq 'upgrade' -and $metadata -cne $baselineMetadata) { throw 'Upgrade replaced baseline metadata' }
+            Invoke-PgHarnessSelfTest $container
+            Assert-State $target
+            Write-Host 'DEFERRED: all appointment integrity/exclusion scenarios await DB-03B-B.'
             $historyBefore = Snapshot-History @($target.changesets).Count
 
             Invoke-Compose run --rm liquibase update
