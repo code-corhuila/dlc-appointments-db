@@ -1,13 +1,14 @@
 param(
     [switch]$StaticOnly,
     [ValidateSet('DB01','DB02')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db02-expected.json'
+    [string]$ExpectedManifest = 'scripts/fixtures/db03-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixture-isolation.ps1')
 . (Join-Path $PSScriptRoot 'pg-test-harness.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/appointment-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -123,6 +124,18 @@ $baselineFixture = (Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/
 if ($baselineFixture -cne "databaseChangeLog:`n  - include:`n      file: 01_ddl/01_schemas/changelog.yaml`n      relativeToChangelogFile: false") {
     throw 'DB-02 baseline must reference the canonical schema changelog without SQL copies'
 }
+
+# DB-03B-B structural safeguards; real SQL/catalog validation still requires PostgreSQL.
+$appointmentChange = Get-Content -LiteralPath (Join-Path $repo '01_ddl/03_tables/changelog.yaml') -Raw
+foreach ($field in @('id: 002-appointments-create-appointments','author: bsbedoya','runInTransaction: true','onFail: HALT','onError: HALT','pg_catalog.pg_extension','pg_catalog.pg_opclass','pg_catalog.pg_depend','has_schema_privilege')) {
+    if (!$appointmentChange.Contains($field)) { throw "Missing appointment dependency/transaction declaration: $field" }
+}
+$appointmentSql = Get-Content -LiteralPath (Join-Path $repo '01_ddl/03_tables/001_create_appointments.sql') -Raw
+foreach ($required in @('CREATE TABLE appointments.appointments','INTO STRICT extension_schema','%I.gist_uuid_ops','NOT DEFERRABLE',"tstzrange(start_at,end_at,'[)')",'ck_appointments_interval','ck_appointments_reminder_due')) {
+    if (!$appointmentSql.Contains($required)) { throw "Missing atomic appointment DDL: $required" }
+}
+if ($appointmentSql -match '(?i)\bDEFAULT\b|\bREFERENCES\b|\b(?:CREATE|ALTER|DROP)\s+EXTENSION\b') { throw 'Unexpected business default, FK or extension mutation' }
+if ((Get-Content -LiteralPath (Join-Path $repo '05_rollbacks/01_ddl/03_tables/001_create_appointments.rollback.sql') -Raw).Trim() -cne 'DROP TABLE appointments.appointments RESTRICT;') { throw 'Unexpected appointment rollback scope' }
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -214,7 +227,8 @@ try {
             if ($scenario -eq 'upgrade' -and $metadata -cne $baselineMetadata) { throw 'Upgrade replaced baseline metadata' }
             Invoke-PgHarnessSelfTest $container
             Assert-State $target
-            Write-Host 'DEFERRED: all appointment integrity/exclusion scenarios await DB-03B-B.'
+            Invoke-AppointmentTests $container
+            Assert-State $target
             $historyBefore = Snapshot-History @($target.changesets).Count
 
             Invoke-Compose run --rm liquibase update

@@ -47,7 +47,7 @@ pwsh -File scripts\verify-db.ps1
 pwsh -File scripts\verify-db.ps1 -Baseline DB02
 ```
 
-`-ExpectedManifest scripts/fixtures/db02-expected.json` is the default target.
+`-ExpectedManifest scripts/fixtures/db03-expected.json` is the default target.
 A future manifest must enumerate every identity in execution order, expected
 schema presence/owner and every nontechnical relation as schema.name:relkind.
 Only Appointments relations may be expected; an omitted/unexpected object fails.
@@ -189,3 +189,27 @@ Local evidence: syntax, DB01/DB02 static checks and transport tests pass.
 Docker daemon access is denied in Codex. Real sessions, blocking, SQL diagnostics,
 extension checks and fixture cleanup are UNVERIFIED here. All appointment cases
 remain DEFERRED until DB-03B-B creates the protected table.
+
+### DB-03B-B: appointment persistence
+
+Approved owner contract: dlc-docs/09-microservices/services/04-appointments-service/data-model.md.
+Changeset 002-appointments-create-appointments (bsbedoya) creates the 16-column
+appointments.appointments table and immediate partial GiST exclusion atomically.
+No business SQL defaults or cross-owner FKs are introduced. The API supplies
+PROGRAMADA/PENDING/PENDING/version 1 and authenticated actor/server timestamps.
+Timezone validation, authorization, optimistic updates and lifecycle remain API work.
+
+The migration discovers btree_gist's actual namespace from pg_extension, verifies
+UUID GiST membership/access, and quotes that namespace explicitly in DDL under a
+transaction-local pg_catalog search_path. It never installs/moves/drops extensions.
+Production provisioner, namespace approval, grants, versions and deployment remain
+pending. The fixture namespace is not imposed on shared databases.
+
+Run pwsh -File scripts/test-appointment-static.ps1 for negative structural probes.
+The existing DB01/DB02 runner commands now target scripts/fixtures/db03-expected.json.
+DB02 stays frozen. The runner checks catalogs, 47 integrity cases, two conflicting
+insert outcomes, exact SQLSTATE/constraint, persisted snapshots and session cleanup.
+Rollback drops only appointments.appointments RESTRICT; it is destructive and
+tested only in the disposable fixture. Production recovery requires its runbook.
+Local static/transport checks pass; PostgreSQL migration, constraint and rollback
+tests are BLOCKED by Docker daemon access. No production readiness is claimed.
