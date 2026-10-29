@@ -26,7 +26,11 @@ $cases = @(
     @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql','INSERT, UPDATE ON appointments.appointment_reminders','INSERT, UPDATE, DELETE ON appointments.appointment_reminders','Lifecycle grant exceeds'),
     @('01_ddl/03_tables/005_create_appointment_reminders.sql','ON DELETE RESTRICT,','ON DELETE CASCADE,','Missing DB-05 declaration'),
     @('05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql','uk_appointment_reminders_live_appointment_id RESTRICT','uk_appointment_reminders_live_appointment_id CASCADE','Unexpected DB-05 rollback scope'),
-    @('01_ddl/10_indexes/003_create_appointments_calendar_indexes.sql','CREATE INDEX idx_appointments_patient_id_start_at','CREATE UNIQUE INDEX idx_appointments_patient_id_start_at','Missing DB-06 declaration')
+    @('01_ddl/10_indexes/003_create_appointments_calendar_indexes.sql','CREATE INDEX idx_appointments_patient_id_start_at','CREATE UNIQUE INDEX idx_appointments_patient_id_start_at','Missing DB-06 declaration'),
+    @('01_ddl/03_tables/006_create_clinical_assignments.sql','ck_clinical_assignments_self_assignment CHECK (started_by <> dentist_id)','ck_clinical_assignments_self_assignment CHECK (true)','Missing DB-07 declaration'),
+    @('03_dcl/01_grants/003_grant_runtime_assignments.sql','SELECT, INSERT, UPDATE ON','SELECT, INSERT, UPDATE, DELETE ON','Assignment grant exceeds'),
+    @('01_ddl/03_tables/006_create_clinical_assignments.sql','    end_reason text,','    end_reason text,    diagnosis text,','Clinical content column'),
+    @('01_ddl/03_tables/006_create_clinical_assignments.sql','    patient_id uuid NOT NULL,','    patient_id uuid NOT NULL REFERENCES patients.patients (patient_id),','cross-owner FK')
 )
 try {
     [void][IO.Directory]::CreateDirectory($probe)
