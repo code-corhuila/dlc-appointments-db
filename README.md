@@ -24,6 +24,38 @@ rule.
 
 Full policy: `00-governance/branching-policy.md` in `dlc-docs`.
 
+## Environment migration (dev, qa, prod)
+
+Each environment has its own PostgreSQL instance (from `dlc-infra-postgres`) with database `di_lucca`
+and the same `appointments` schema; environments differ only by host, secrets and Liquibase context.
+
+| Environment | Branch | Instance | Liquibase context |
+| --- | --- | --- | --- |
+| dev | `develop` | development | `dev` (synthetic seeds only) |
+| qa | `qa` | QA | `qa` (synthetic test data only) |
+| prod | `main` | separate production instance | `prod` (no seeds) |
+
+Deployment order for one environment:
+
+1. The platform DBA runs `deploy/bootstrap.sql` as the engine bootstrap account. It creates the
+   `appointments_migrator` and `appointments_runtime` login roles, the `appointments_liquibase`
+   tracking schema and `btree_gist` in `appointments_extensions`, then sets both passwords from the
+   environment's secret manager.
+2. Copy `env/.env.<environment>.example` to `env/.env.<environment>` and point it at that
+   environment's migrator password file. Run the owned changes as `appointments_migrator`:
+
+   ```bash
+   docker compose --env-file env/.env.dev -f deploy/compose.migrate.yml --profile tooling run --rm appointments-db-migrate update
+   ```
+
+3. After the first migration, the DBA re-runs `deploy/bootstrap.sql`. Once the owner schema exists it
+   revokes `CREATE` on the database, so the migrator cannot install trusted extensions.
+4. The API connects as `appointments_runtime` (`SELECT`, `INSERT`, `UPDATE` from the owner
+   grants; no DDL, `DELETE` or `TRUNCATE`). Its credentials are a separate secret per environment.
+
+`pwsh -File scripts/test-environment-migration.ps1` runs steps 1-3 for dev, qa and prod against a
+disposable PostgreSQL and checks ownership, the runtime owner scope and the denied operations.
+
 ## DB-02 schema migration and verification
 
 Requires PowerShell 7, Docker Engine and Docker Compose v2+.
