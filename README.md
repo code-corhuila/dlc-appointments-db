@@ -2,8 +2,8 @@
 
 > appointments bounded context: database (schema, seeds, migrations)
 
-Part of the **LMS Library** distributed system — team `lms-library`, Grupo 2.
-Governance and documentation live in [`library-docs`](https://github.com/code-corhuila/library-docs).
+Part of **DI LUCCA**, Appointments bounded context.
+Governance and documentation live in [`dlc-docs`](https://github.com/code-corhuila/dlc-docs).
 
 ## Branching
 
@@ -22,4 +22,69 @@ branch into another: `merge develop -> qa` and `merge qa -> main` do not exist i
 `main` requires **1 approval from `ariel5253`**. On `develop` and `qa` the team sets its own review
 rule.
 
-Full policy: `00-governance/branching-policy.md` in `library-docs`.
+Full policy: `00-governance/branching-policy.md` in `dlc-docs`.
+
+## DB-02 schema migration and verification
+
+Requires PowerShell 7, Docker Engine and Docker Compose v2+.
+Run from the repository root (Windows or Linux):
+
+```powershell
+pwsh -File scripts/verify-db.ps1 -StaticOnly
+pwsh -File scripts/verify-db.ps1
+```
+
+The first command checks changelog reachability, DDL order, DB-02 metadata,
+external SQL paths and schema-only SQL scope. It is not a general YAML parser;
+Liquibase validate is authoritative. CI runs both commands for PRs and develop.
+The full runner uses separate empty-store and DB-01-upgrade fixtures. Each checks
+validate/update/update, exact history identity, rollback-count --count=1 and update,
+schema existence/owner, unchanged history on retry, metadata OIDs and isolation.
+The empty baseline in scripts/fixtures/db01-baseline.yml represents DB-01's zero
+changesets; it is a test baseline, not an archived Git revision. Upgrade executes
+that baseline, then DB-02 against the SAME database and history/lock tables.
+No baseline container/database is reset between those two updates.
+The Compose fixture has no published ports or external database URL. It uses a
+unique project, temporary database storage and a generated per-run test password.
+Cleanup removes only that invocation's project in a finally block. No real
+credentials or .env file are needed; do not copy production credentials here.
+The sample environment file documents optional test image overrides. Export them
+in the shell; the runner does not load .env.example automatically.
+
+Images postgres:16.13 and liquibase/liquibase:4.33.0 are fixed **proposals for
+verification**, not approved production versions. Sources:
+[PostgreSQL release](https://www.postgresql.org/docs/16/release-16-13.html) and
+[Liquibase Docker releases](https://github.com/liquibase/docker/releases).
+Tags, JDBC compatibility and successful pulls still require runtime verification.
+
+ADR-002/003/007/008 preserve one shared production PostgreSQL with owner schemas.
+This isolated fixture does not replace that architecture. Its init-test.sql
+creates only appointments_liquibase for technical history/locks, automatically
+before Liquibase starts. Nothing is created manually in a shared database.
+This is a test-only metadata convention; production metadata placement, grants,
+owner-scoped credentials and bootstrap remain unapproved and must be coordinated.
+Do not use this test superuser or runner against shared environments.
+
+DB-02 registers 001-appointments-create-schema, author bsbedoya, with labels
+"HU-APT-001,ddl,schemas". The author was verified on 2026-10-23 via the GitHub
+users API: login bsbedoya, name Brayan Smith Bedoya, account ID 160141855
+(https://api.github.com/users/bsbedoya). The user authorized this initial ID;
+coordination of numbering with the migration owner is still required.
+
+SQL: CREATE SCHEMA appointments AUTHORIZATION CURRENT_USER;
+CURRENT_USER becomes schema owner and requires CREATE on the target database.
+Production migration role/ownership and runtime privileges remain pending.
+The precondition HALTs if appointments exists; it never silently adopts a schema.
+Rollback: DROP SCHEMA appointments RESTRICT; fails if objects remain, preserves
+Liquibase metadata, and must not be forced with CASCADE or manual object removal.
+No tables, indexes, extensions, roles or grants are introduced by DB-02.
+This is schema infrastructure only, not completed HU-APT-001 or production readiness.
+
+### Local DB-02 evidence (2026-10-23)
+
+- RED: required migration and rollback files were absent before implementation.
+- Static checks, PowerShell syntax and Compose configuration: PASS.
+- Negative temp-copy probes (author, HALT, CASCADE, missing SQL): PASS.
+- Runtime preflight: Docker Linux engine access denied; no migration tests executed.
+- Empty deployment, rollback, reconstruction, DB-01 upgrade and remote CI: UNVERIFIED.
+- Run the full runner locally with an accessible Docker daemon before acceptance.
