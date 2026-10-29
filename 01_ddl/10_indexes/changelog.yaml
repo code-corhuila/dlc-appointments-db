@@ -53,3 +53,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 011-appointments-create-appointments-calendar-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-003,ddl,indexes"
+      comment: "Index the approved appointment list paths: dentist calendar, patient filter and default createdAt/id order."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('idx_appointments_dentist_id_start_at','idx_appointments_patient_id_start_at','idx_appointments_created_at_appointment_id')"
+      changes:
+        - sqlFile:
+            path: 003_create_appointments_calendar_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/003_create_appointments_calendar_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
