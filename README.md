@@ -252,3 +252,27 @@ scripts/fixtures/scheduling-tests.ps1 adds rolled-back integrity cases for the n
 tables (exact SQLSTATE and constraint name) and privilege cases executed under
 SET LOCAL ROLE appointments_runtime: allowed DML succeeds; DELETE of audit-bearing
 rows, TRUNCATE, CREATE/ALTER/DROP and reading Liquibase metadata fail with 42501.
+
+### DB-05: lifecycle audit and versioned reminders (HU-APT-002)
+
+Persistence for issue #5:
+
+- 007-appointments-create-appointment-status-changes: insert-only lifecycle audit,
+  one row per accepted appointment version (uk on appointment_id+version). A CHECK
+  allows only the documented transitions (SCHEDULE, CONFIRM, CANCEL, RESCHEDULE,
+  START_ATTENTION, NO_SHOW, COMPLETE); rescheduling requires a changed old/new
+  interval; cancellation and any override require a 1-1000 character reason; an
+  override is limited to CANCEL/RESCHEDULE by an ADMINISTRATOR actor.
+- 008-appointments-create-appointment-reminders: EMAIL-only reminder work keyed by
+  appointment version, with PENDING/REQUESTED/SENT/DELIVERY_FAILED/INVALIDATED,
+  attempts, stable delivery id, safe outcome code and invalidation instant.
+- 009-appointments-create-appointment-reminders-indexes: at most one live
+  (non-INVALIDATED) reminder per appointment, plus a pending due-instant index.
+- 010-appointments-grant-runtime-lifecycle: SELECT/INSERT on the audit (no UPDATE
+  or DELETE), SELECT/INSERT/UPDATE on reminders.
+
+Annex A order places later tables before earlier indexes/grants, so the runner now
+requires the baseline to be an ordered subsequence of the target and expects
+upgrades to append the remaining changesets in changelog order. -Baseline DB04
+applies the released HU-APT-001 changesets with --label-filter=HU-APT-001.
+scripts/fixtures/lifecycle-tests.ps1 adds 80 rolled-back cases.
