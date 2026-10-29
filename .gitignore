@@ -1,0 +1,5 @@
+# Real environment files and secrets never enter Git.
+env/.env.dev
+env/.env.qa
+env/.env.prod
+secrets/
