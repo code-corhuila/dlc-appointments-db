@@ -53,3 +53,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/03_dcl/01_grants/002_grant_runtime_lifecycle.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 014-appointments-grant-runtime-assignments
+      author: LuisBonilla2260
+      labels: "HU-APT-004,dcl,grants"
+      comment: "Grant the runtime role create/end access to clinical assignments; no DELETE or DDL."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname='appointments_runtime' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolbypassrls"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege('appointments_runtime',oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 003_grant_runtime_assignments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/003_grant_runtime_assignments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
