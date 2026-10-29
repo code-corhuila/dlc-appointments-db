@@ -80,3 +80,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/003_create_appointments_calendar_indexes.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 013-appointments-create-clinical-assignments-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-004,ddl,indexes"
+      comment: "Enforce one active assignment per patient/dentist and index patient/dentist/status authorization paths."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='clinical_assignments' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('uk_clinical_assignments_active_patient_dentist','idx_clinical_assignments_patient_id_dentist_id_status','idx_clinical_assignments_dentist_id_status')"
+      changes:
+        - sqlFile:
+            path: 004_create_clinical_assignments_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/004_create_clinical_assignments_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
