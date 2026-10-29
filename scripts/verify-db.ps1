@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
-    [ValidateSet('DB01','DB02','DB03','DB04')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db05-expected.json'
+    [ValidateSet('DB01','DB02','DB03','DB04','DB05')][string]$Baseline = 'DB01',
+    [string]$ExpectedManifest = 'scripts/fixtures/db06-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -11,6 +11,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixtures/appointment-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/scheduling-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/lifecycle-tests.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/calendar-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -23,8 +24,8 @@ function Identity($Changesets) {
 $target = Get-Content -LiteralPath (Join-Path $repo $ExpectedManifest) -Raw | ConvertFrom-Json
 $baselineState = if ($Baseline -eq 'DB02') {
     Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-expected.json') -Raw | ConvertFrom-Json
-} elseif ($Baseline -in @('DB03','DB04')) {
-    # Released increments are applied from the real master: DB03 by count, DB04 by its HU label.
+} elseif ($Baseline -in @('DB03','DB04','DB05')) {
+    # Released increments are applied from the real master: DB03 by count, later ones by HU labels.
     Get-Content -LiteralPath (Join-Path $repo "scripts/fixtures/$($Baseline.ToLower())-expected.json") -Raw | ConvertFrom-Json
 } else { [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()} }
 if ($target.schemaPresent -isnot [bool] -or $target.schemaOwner -ne 'bootstrap_test') { throw 'Invalid test schema expectation' }
@@ -190,6 +191,14 @@ foreach ($pair in @(
     $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
     if ($sql -cne $pair[1]) { throw "Unexpected DB-05 rollback scope: $($pair[0])" }
 }
+# DB-06 structural safeguards: plain btree calendar indexes on the owned appointment table only.
+$calendar = Get-Content -LiteralPath (Join-Path $repo '01_ddl/10_indexes/003_create_appointments_calendar_indexes.sql') -Raw
+foreach ($required in @('CREATE INDEX idx_appointments_dentist_id_start_at ON appointments.appointments (dentist_id, start_at);','CREATE INDEX idx_appointments_patient_id_start_at ON appointments.appointments (patient_id, start_at);','CREATE INDEX idx_appointments_created_at_appointment_id ON appointments.appointments (created_at, appointment_id);')) {
+    if (!$calendar.Contains($required)) { throw "Missing DB-06 declaration: $required" }
+}
+if ($calendar -match '(?i)\b(?:CREATE|ALTER|DROP)\s+(?:TABLE|EXTENSION|ROLE|SCHEMA)\b|\bUNIQUE\b|\bCASCADE\b|\bGRANT\b') { throw 'Unexpected DB-06 scope beyond calendar indexes' }
+$sql = @(Get-Content -LiteralPath (Join-Path $repo '05_rollbacks/01_ddl/10_indexes/003_create_appointments_calendar_indexes.rollback.sql') | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
+if ($sql -cne 'DROP INDEX appointments.idx_appointments_created_at_appointment_id RESTRICT; DROP INDEX appointments.idx_appointments_patient_id_start_at RESTRICT; DROP INDEX appointments.idx_appointments_dentist_id_start_at RESTRICT;') { throw 'Unexpected DB-06 rollback scope' }
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -270,6 +279,8 @@ try {
                     Invoke-Compose run --rm liquibase update-count "--count=$(@($before.changesets).Count)"
                 } elseif ($Baseline -eq 'DB04') {
                     Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001'
+                } elseif ($Baseline -eq 'DB05') {
+                    Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001 or HU-APT-002'
                 } else {
                     $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
                     Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
@@ -294,6 +305,8 @@ try {
             Invoke-SchedulingTests $container
             Assert-State $target
             Invoke-LifecycleTests $container
+            Assert-State $target
+            Invoke-CalendarTests $container
             Assert-State $target
             $historyBefore = Snapshot-History @($target.changesets).Count
 

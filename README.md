@@ -276,3 +276,17 @@ requires the baseline to be an ordered subsequence of the target and expects
 upgrades to append the remaining changesets in changelog order. -Baseline DB04
 applies the released HU-APT-001 changesets with --label-filter=HU-APT-001.
 scripts/fixtures/lifecycle-tests.ps1 adds 80 rolled-back cases.
+
+### DB-06: calendar query indexes (HU-APT-003)
+
+Issue #6 asks to verify the calendar projection and migrate only evidenced gaps.
+Before this increment appointments.appointments had only pk_appointments and the
+partial GiST exclusion, which covers PROGRAMADA/CONFIRMADA/EN_ATENCION only and so
+cannot serve a Dentist calendar that includes FINALIZADA, the patientId filter or the
+default createdAt/id page order of GET /api/v1/appointments (API-APT-01).
+011-appointments-create-appointments-calendar-indexes adds three btree indexes:
+(dentist_id, start_at), (patient_id, start_at) and (created_at, appointment_id).
+No table, column, projection or grant changes: the existing columns already hold the
+minimal identity/status the API projects. -Baseline DB05 applies the released
+HU-APT-001/002 state by label. scripts/fixtures/calendar-tests.ps1 checks the exact
+index definitions and that each query path is planned through its index.
