@@ -1,0 +1,27 @@
+-- Owner-local outbox: business state and its integration event commit in one transaction.
+CREATE TABLE appointments.outbox_events (
+    event_id uuid NOT NULL CONSTRAINT pk_outbox_events PRIMARY KEY,
+    event_type text NOT NULL,
+    event_version integer NOT NULL,
+    aggregate_type text NOT NULL,
+    aggregate_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    correlation_id uuid NOT NULL,
+    causation_id uuid,
+    actor_user_id uuid,
+    occurred_at timestamptz NOT NULL,
+    recorded_at timestamptz NOT NULL,
+    status text NOT NULL,
+    attempts integer NOT NULL,
+    next_attempt_at timestamptz,
+    published_at timestamptz,
+    last_error_code text,
+    CONSTRAINT ck_outbox_events_event_type CHECK (event_type ~ '^[A-Z][A-Za-z]{2,99}$'),
+    CONSTRAINT ck_outbox_events_event_version CHECK (event_version >= 1),
+    CONSTRAINT ck_outbox_events_aggregate_type CHECK (aggregate_type IN ('Appointment','ClinicalAssignment')),
+    CONSTRAINT ck_outbox_events_payload CHECK (jsonb_typeof(payload) = 'object'),
+    CONSTRAINT ck_outbox_events_status CHECK (status IN ('PENDING','PUBLISHED','FAILED')),
+    CONSTRAINT ck_outbox_events_attempts CHECK (attempts >= 0),
+    CONSTRAINT ck_outbox_events_published CHECK ((status = 'PUBLISHED') = (published_at IS NOT NULL)),
+    CONSTRAINT ck_outbox_events_error_code CHECK (last_error_code IS NULL OR last_error_code ~ '^[A-Z][A-Z0-9_]{0,63}$')
+);
