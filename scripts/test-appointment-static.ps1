@@ -21,7 +21,11 @@ $cases = @(
     @('03_dcl/01_grants/001_grant_runtime_scheduling.sql','GRANT SELECT, INSERT, UPDATE ON appointments.appointments','GRANT SELECT, INSERT, UPDATE, DELETE ON appointments.appointments','Runtime grant exceeds DML scope'),
     @('03_dcl/01_grants/001_grant_runtime_scheduling.sql','appointments.blocked_intervals TO appointments_runtime;','appointments.blocked_intervals TO appointments_runtime WITH GRANT OPTION;','Runtime grant exceeds DML scope'),
     @('05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql','RESTRICT','CASCADE','Unexpected DB-04 rollback scope'),
-    @('01_ddl/03_tables/changelog.yaml','author: LuisBonilla2260','author: unapproved','Changelogs differ')
+    @('01_ddl/03_tables/changelog.yaml','author: LuisBonilla2260','author: unapproved','Changelogs differ'),
+    @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql','GRANT SELECT, INSERT ON','GRANT SELECT, INSERT, UPDATE ON','Missing DB-05 declaration'),
+    @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql','INSERT, UPDATE ON appointments.appointment_reminders','INSERT, UPDATE, DELETE ON appointments.appointment_reminders','Lifecycle grant exceeds'),
+    @('01_ddl/03_tables/005_create_appointment_reminders.sql','ON DELETE RESTRICT,','ON DELETE CASCADE,','Missing DB-05 declaration'),
+    @('05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql','uk_appointment_reminders_live_appointment_id RESTRICT','uk_appointment_reminders_live_appointment_id CASCADE','Unexpected DB-05 rollback scope')
 )
 try {
     [void][IO.Directory]::CreateDirectory($probe)
