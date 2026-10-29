@@ -1,1 +1,28 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 005-appointments-create-outbox-events-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,indexes"
+      comment: "Index unpublished outbox events for the relay polling path."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='outbox_events' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='idx_outbox_events_next_attempt_at'"
+      changes:
+        - sqlFile:
+            path: 001_create_outbox_events_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/001_create_outbox_events_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

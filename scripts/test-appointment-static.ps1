@@ -15,7 +15,13 @@ $cases = @(
     @($yaml,'runInTransaction: true','runInTransaction: false','Missing appointment dependency/transaction'),
     @($yaml,'pg_catalog.pg_depend','pg_catalog.pg_class','Missing appointment dependency/transaction'),
     @($yaml,'author: bsbedoya','author: unapproved','Changelogs differ'),
-    @($rollback,'RESTRICT','CASCADE','Unexpected appointment rollback')
+    @($rollback,'RESTRICT','CASCADE','Unexpected appointment rollback'),
+    @('01_ddl/03_tables/003_create_outbox_events.sql','attempts integer NOT NULL','attempts integer NOT NULL DEFAULT 0','Unexpected default'),
+    @('01_ddl/03_tables/002_create_dentist_schedules.sql','ON DELETE RESTRICT,','ON DELETE CASCADE,','Missing DB-04 declaration'),
+    @('03_dcl/01_grants/001_grant_runtime_scheduling.sql','GRANT SELECT, INSERT, UPDATE ON appointments.appointments','GRANT SELECT, INSERT, UPDATE, DELETE ON appointments.appointments','Runtime grant exceeds DML scope'),
+    @('03_dcl/01_grants/001_grant_runtime_scheduling.sql','appointments.blocked_intervals TO appointments_runtime;','appointments.blocked_intervals TO appointments_runtime WITH GRANT OPTION;','Runtime grant exceeds DML scope'),
+    @('05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql','RESTRICT','CASCADE','Unexpected DB-04 rollback scope'),
+    @('01_ddl/03_tables/changelog.yaml','author: LuisBonilla2260','author: unapproved','Changelogs differ')
 )
 try {
     [void][IO.Directory]::CreateDirectory($probe)
