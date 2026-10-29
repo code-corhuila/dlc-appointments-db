@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
-    [ValidateSet('DB01','DB02')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db03-expected.json'
+    [ValidateSet('DB01','DB02','DB03')][string]$Baseline = 'DB01',
+    [string]$ExpectedManifest = 'scripts/fixtures/db04-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -9,6 +9,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixture-isolation.ps1')
 . (Join-Path $PSScriptRoot 'pg-test-harness.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/appointment-tests.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/scheduling-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -21,6 +22,9 @@ function Identity($Changesets) {
 $target = Get-Content -LiteralPath (Join-Path $repo $ExpectedManifest) -Raw | ConvertFrom-Json
 $baselineState = if ($Baseline -eq 'DB02') {
     Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-expected.json') -Raw | ConvertFrom-Json
+} elseif ($Baseline -eq 'DB03') {
+    # DB03 is the released appointment table: applied as the first changesets of the real master.
+    Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db03-expected.json') -Raw | ConvertFrom-Json
 } else { [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()} }
 if ($target.schemaPresent -isnot [bool] -or $target.schemaOwner -ne 'bootstrap_test') { throw 'Invalid test schema expectation' }
 foreach ($name in $target.relations) { if ($name -notmatch '^appointments\.[a-z_][a-z0-9_]*:[rSipvmfc]$') { throw 'Relations must be explicitly Appointments-owned' } }
@@ -136,6 +140,27 @@ foreach ($required in @('CREATE TABLE appointments.appointments','INTO STRICT ex
 }
 if ($appointmentSql -match '(?i)\bDEFAULT\b|\bREFERENCES\b|\b(?:CREATE|ALTER|DROP)\s+EXTENSION\b') { throw 'Unexpected business default, FK or extension mutation' }
 if ((Get-Content -LiteralPath (Join-Path $repo '05_rollbacks/01_ddl/03_tables/001_create_appointments.rollback.sql') -Raw).Trim() -cne 'DROP TABLE appointments.appointments RESTRICT;') { throw 'Unexpected appointment rollback scope' }
+# DB-04 structural safeguards: owned objects only, external rollback scope, no business defaults.
+$db04 = @{
+    '01_ddl/03_tables/002_create_dentist_schedules.sql' = @('CREATE TABLE appointments.dentist_schedules','CREATE TABLE appointments.availability_intervals','CREATE TABLE appointments.blocked_intervals','INTO STRICT extension_schema','%1$I.gist_uuid_ops','NOT DEFERRABLE','uk_dentist_schedules_dentist_id','ON DELETE RESTRICT')
+    '01_ddl/03_tables/003_create_outbox_events.sql' = @('CREATE TABLE appointments.outbox_events','ck_outbox_events_published','correlation_id uuid NOT NULL')
+    '01_ddl/10_indexes/001_create_outbox_events_indexes.sql' = @('CREATE INDEX idx_outbox_events_next_attempt_at ON appointments.outbox_events')
+    '03_dcl/01_grants/001_grant_runtime_scheduling.sql' = @('GRANT USAGE ON SCHEMA appointments TO appointments_runtime;')
+}
+foreach ($file in $db04.Keys) {
+    $text = Get-Content -LiteralPath (Join-Path $repo $file) -Raw
+    foreach ($required in $db04[$file]) { if (!$text.Contains($required)) { throw "Missing DB-04 declaration: $required" } }
+    if ($text -match '(?i)\bDEFAULT\b|\b(?:CREATE|ALTER|DROP)\s+(?:EXTENSION|ROLE|SCHEMA)\b|\bCASCADE\b|\b(?:iam|patients|billing|clinical)\.') { throw "Unexpected default, extension/role/schema mutation, CASCADE or other-owner reference: $file" }
+}
+$grants = Get-Content -LiteralPath (Join-Path $repo '03_dcl/01_grants/001_grant_runtime_scheduling.sql') -Raw
+if ($grants -match '(?i)\bGRANT\s+ALL\b|\bTRUNCATE\b|\bWITH\s+GRANT\s+OPTION\b|\bCREATE\b|\bDELETE\b[^;]*\bappointments\.(?:appointments|dentist_schedules|outbox_events)\b') { throw 'Runtime grant exceeds DML scope' }
+foreach ($pair in @(
+    @('05_rollbacks/01_ddl/03_tables/002_create_dentist_schedules.rollback.sql','DROP TABLE appointments.blocked_intervals RESTRICT; DROP TABLE appointments.availability_intervals RESTRICT; DROP TABLE appointments.dentist_schedules RESTRICT;'),
+    @('05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql','DROP TABLE appointments.outbox_events RESTRICT;'),
+    @('05_rollbacks/01_ddl/10_indexes/001_create_outbox_events_indexes.rollback.sql','DROP INDEX appointments.idx_outbox_events_next_attempt_at RESTRICT;'))) {
+    $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
+    if ($sql -cne $pair[1]) { throw "Unexpected DB-04 rollback scope: $($pair[0])" }
+}
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -210,8 +235,12 @@ try {
             $preservedHistory = '[]'
             if ($scenario -eq 'upgrade') {
                 $before = $baselineState
-                $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
-                Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
+                if ($Baseline -eq 'DB03') {
+                    Invoke-Compose run --rm liquibase update-count "--count=$(@($before.changesets).Count)"
+                } else {
+                    $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
+                    Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
+                }
                 Assert-History $before
                 $preservedHistory = Snapshot-History @($before.changesets).Count
                 Assert-State $before
@@ -228,6 +257,8 @@ try {
             Invoke-PgHarnessSelfTest $container
             Assert-State $target
             Invoke-AppointmentTests $container
+            Assert-State $target
+            Invoke-SchedulingTests $container
             Assert-State $target
             $historyBefore = Snapshot-History @($target.changesets).Count
 

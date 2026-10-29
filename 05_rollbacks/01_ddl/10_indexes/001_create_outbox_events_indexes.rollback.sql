@@ -1,0 +1,1 @@
+DROP INDEX appointments.idx_outbox_events_next_attempt_at RESTRICT;

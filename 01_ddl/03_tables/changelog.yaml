@@ -32,3 +32,60 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/001_create_appointments.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 003-appointments-create-dentist-schedules
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create dentist schedules with non-overlapping availability and blocked intervals; btree_gist is an external dependency."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('dentist_schedules','availability_intervals','blocked_intervals')"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace JOIN pg_catalog.pg_opclass c ON c.opcnamespace=n.oid JOIN pg_catalog.pg_am a ON a.oid=c.opcmethod JOIN pg_catalog.pg_depend d ON d.classid='pg_catalog.pg_opclass'::pg_catalog.regclass AND d.objid=c.oid AND d.refclassid='pg_catalog.pg_extension'::pg_catalog.regclass AND d.refobjid=e.oid AND d.deptype='e' WHERE e.extname='btree_gist' AND c.opcname='gist_uuid_ops' AND c.opcintype='pg_catalog.uuid'::pg_catalog.regtype AND a.amname='gist' AND has_schema_privilege(current_user,n.oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 002_create_dentist_schedules.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/002_create_dentist_schedules.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 004-appointments-create-outbox-events
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create the owner-local outbox committed atomically with Appointments state."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='outbox_events'"
+      changes:
+        - sqlFile:
+            path: 003_create_outbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
