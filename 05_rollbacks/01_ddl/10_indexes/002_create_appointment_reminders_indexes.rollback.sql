@@ -1,0 +1,2 @@
+DROP INDEX appointments.idx_appointment_reminders_due_at RESTRICT;
+DROP INDEX appointments.uk_appointment_reminders_live_appointment_id RESTRICT;

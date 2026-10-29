@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
-    [ValidateSet('DB01','DB02','DB03')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db04-expected.json'
+    [ValidateSet('DB01','DB02','DB03','DB04')][string]$Baseline = 'DB01',
+    [string]$ExpectedManifest = 'scripts/fixtures/db05-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -10,6 +10,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'pg-test-harness.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/appointment-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/scheduling-tests.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/lifecycle-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -22,15 +23,24 @@ function Identity($Changesets) {
 $target = Get-Content -LiteralPath (Join-Path $repo $ExpectedManifest) -Raw | ConvertFrom-Json
 $baselineState = if ($Baseline -eq 'DB02') {
     Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-expected.json') -Raw | ConvertFrom-Json
-} elseif ($Baseline -eq 'DB03') {
-    # DB03 is the released appointment table: applied as the first changesets of the real master.
-    Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db03-expected.json') -Raw | ConvertFrom-Json
+} elseif ($Baseline -in @('DB03','DB04')) {
+    # Released increments are applied from the real master: DB03 by count, DB04 by its HU label.
+    Get-Content -LiteralPath (Join-Path $repo "scripts/fixtures/$($Baseline.ToLower())-expected.json") -Raw | ConvertFrom-Json
 } else { [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()} }
 if ($target.schemaPresent -isnot [bool] -or $target.schemaOwner -ne 'bootstrap_test') { throw 'Invalid test schema expectation' }
 foreach ($name in $target.relations) { if ($name -notmatch '^appointments\.[a-z_][a-z0-9_]*:[rSipvmfc]$') { throw 'Relations must be explicitly Appointments-owned' } }
 $targetKeys = @(Identity $target.changesets) -join "`n"
 $baselineKeys = Identity $baselineState.changesets
-if ($baselineKeys -and $targetKeys -ne $baselineKeys -and !$targetKeys.StartsWith($baselineKeys+"`n")) { throw 'Baseline is not a prefix of target history' }
+$targetList = @($targetKeys -split "`n")
+$baselineList = @($baselineKeys -split "`n" | Where-Object { $_ })
+$position = 0
+foreach ($key in $baselineList) {
+    $position = [Array]::IndexOf($targetList, $key, $position)
+    if ($position -lt 0) { throw 'Baseline is not an ordered subsequence of target history' }
+    $position++
+}
+# Liquibase appends pending changesets in changelog order after the applied baseline.
+$upgradeKeys = @($baselineList + @($targetList | Where-Object { $_ -notin $baselineList })) -join "`n"
 
 function Check-Changelog([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
@@ -161,6 +171,25 @@ foreach ($pair in @(
     $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
     if ($sql -cne $pair[1]) { throw "Unexpected DB-04 rollback scope: $($pair[0])" }
 }
+# DB-05 structural safeguards: insert-only audit, versioned reminders, bounded grants.
+foreach ($pair in @(
+    @('01_ddl/03_tables/004_create_appointment_status_changes.sql', @('CREATE TABLE appointments.appointment_status_changes','ck_appointment_status_changes_transition','ck_appointment_status_changes_override','uk_appointment_status_changes_appointment_version','ON DELETE RESTRICT')),
+    @('01_ddl/03_tables/005_create_appointment_reminders.sql', @('CREATE TABLE appointments.appointment_reminders','uk_appointment_reminders_appointment_version','ck_appointment_reminders_invalidated','ON DELETE RESTRICT')),
+    @('01_ddl/10_indexes/002_create_appointment_reminders_indexes.sql', @('CREATE UNIQUE INDEX uk_appointment_reminders_live_appointment_id',"WHERE status <> 'INVALIDATED'")),
+    @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql', @('GRANT SELECT, INSERT ON appointments.appointment_status_changes TO appointments_runtime;')))) {
+    $text = Get-Content -LiteralPath (Join-Path $repo $pair[0]) -Raw
+    foreach ($required in $pair[1]) { if (!$text.Contains($required)) { throw "Missing DB-05 declaration: $required" } }
+    if ($text -match '(?i)\bDEFAULT\b|\b(?:CREATE|ALTER|DROP)\s+(?:EXTENSION|ROLE|SCHEMA)\b|\bCASCADE\b|\b(?:iam|patients|billing|clinical)\.') { throw "Unexpected default, extension/role/schema mutation, CASCADE or other-owner reference: $($pair[0])" }
+}
+$lifecycleGrants = Get-Content -LiteralPath (Join-Path $repo '03_dcl/01_grants/002_grant_runtime_lifecycle.sql') -Raw
+if ($lifecycleGrants -match '(?i)\bGRANT\s+ALL\b|\bTRUNCATE\b|\bDELETE\b|\bWITH\s+GRANT\s+OPTION\b|\bUPDATE\b[^;]*appointment_status_changes') { throw 'Lifecycle grant exceeds insert-only audit scope' }
+foreach ($pair in @(
+    @('05_rollbacks/01_ddl/03_tables/004_create_appointment_status_changes.rollback.sql','DROP TABLE appointments.appointment_status_changes RESTRICT;'),
+    @('05_rollbacks/01_ddl/03_tables/005_create_appointment_reminders.rollback.sql','DROP TABLE appointments.appointment_reminders RESTRICT;'),
+    @('05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql','DROP INDEX appointments.idx_appointment_reminders_due_at RESTRICT; DROP INDEX appointments.uk_appointment_reminders_live_appointment_id RESTRICT;'))) {
+    $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
+    if ($sql -cne $pair[1]) { throw "Unexpected DB-05 rollback scope: $($pair[0])" }
+}
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -198,9 +227,9 @@ function Assert-State($Expected) {
 function Get-MetadataIdentity {
     Query "SELECT oid::text FROM pg_class WHERE oid IN (to_regclass('appointments_liquibase.databasechangelog'),to_regclass('appointments_liquibase.databasechangeloglock')) ORDER BY oid;"
 }
-function Assert-History($Expected) {
+function Assert-History($Expected, [string]$Order = '') {
     $actual = Query 'SELECT id||''|''||author||''|''||filename FROM appointments_liquibase.databasechangelog ORDER BY orderexecuted;'
-    if ($actual -cne (Identity $Expected.changesets)) { throw 'Unexpected history identity/order; rollback forbidden' }
+    if ($actual -cne $(if ($Order) { $Order } else { Identity $Expected.changesets })) { throw 'Unexpected history identity/order; rollback forbidden' }
     if ((Query "SELECT count(*) FROM appointments_liquibase.databasechangelog WHERE exectype <> 'EXECUTED';") -ne '0') { throw 'Unexpected execution type' }
 }
 function Snapshot-History([int]$Count) {
@@ -233,10 +262,14 @@ try {
             Assert-State ([pscustomobject]@{schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()})
             $before = [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()}
             $preservedHistory = '[]'
+            $expectedOrder = ''
             if ($scenario -eq 'upgrade') {
                 $before = $baselineState
+                $expectedOrder = $upgradeKeys
                 if ($Baseline -eq 'DB03') {
                     Invoke-Compose run --rm liquibase update-count "--count=$(@($before.changesets).Count)"
+                } elseif ($Baseline -eq 'DB04') {
+                    Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001'
                 } else {
                     $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
                     Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
@@ -249,7 +282,7 @@ try {
             }
             Invoke-Compose run --rm liquibase validate
             Invoke-Compose run --rm liquibase update
-            Assert-History $target
+            Assert-History $target $expectedOrder
             Assert-State $target
             $metadata = Get-MetadataIdentity
             if (@($metadata -split "`n").Count -ne 2) { throw 'Metadata tables missing' }
@@ -260,12 +293,14 @@ try {
             Assert-State $target
             Invoke-SchedulingTests $container
             Assert-State $target
+            Invoke-LifecycleTests $container
+            Assert-State $target
             $historyBefore = Snapshot-History @($target.changesets).Count
 
             Invoke-Compose run --rm liquibase update
-            Assert-History $target
+            Assert-History $target $expectedOrder
             if ((Snapshot-History @($target.changesets).Count) -cne $historyBefore) { throw 'Second update changed history' }
-            Assert-History $target # Exact identities/order checked immediately before rollback.
+            Assert-History $target $expectedOrder # Exact identities/order checked immediately before rollback.
             $rollbackCount = @($target.changesets).Count - @($before.changesets).Count
             if ($rollbackCount -gt 0) {
                 Invoke-Compose run --rm liquibase rollback-count "--count=$rollbackCount"
@@ -275,7 +310,7 @@ try {
                 if ((Get-MetadataIdentity) -cne $metadata) { throw 'Rollback replaced/deleted metadata' }
                 Invoke-Compose run --rm liquibase update
                 Assert-State $target
-                Assert-History $target
+                Assert-History $target $expectedOrder
                 if ((Get-MetadataIdentity) -cne $metadata) { throw 'Reconstruction replaced metadata' }
             } else { Write-Host 'NO NEW CHANGESETS: baseline equals target; rollback/reconstruction not exercised here.' }
             if ((Snapshot-History @($before.changesets).Count) -cne $preservedHistory) { throw 'Upgrade/reconstruction changed baseline history' }
