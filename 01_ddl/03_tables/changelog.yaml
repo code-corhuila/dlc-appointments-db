@@ -89,3 +89,57 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 007-appointments-create-appointment-status-changes
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,tables"
+      comment: "Create the insert-only lifecycle audit with allowed transitions and Administrator override reason."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r' AND has_schema_privilege(current_user,n.oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_status_changes'"
+      changes:
+        - sqlFile:
+            path: 004_create_appointment_status_changes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/004_create_appointment_status_changes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 008-appointments-create-appointment-reminders
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,tables"
+      comment: "Create versioned informational reminder work with invalidation and safe delivery outcomes."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r' AND has_schema_privilege(current_user,n.oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_reminders'"
+      changes:
+        - sqlFile:
+            path: 005_create_appointment_reminders.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/005_create_appointment_reminders.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

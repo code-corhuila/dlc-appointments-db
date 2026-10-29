@@ -26,3 +26,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/10_indexes/001_create_outbox_events_indexes.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 009-appointments-create-appointment-reminders-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,indexes"
+      comment: "Enforce one live reminder per appointment and index pending reminders by due instant."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_reminders' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('uk_appointment_reminders_live_appointment_id','idx_appointment_reminders_due_at')"
+      changes:
+        - sqlFile:
+            path: 002_create_appointment_reminders_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
