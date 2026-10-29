@@ -1,1 +1,28 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 006-appointments-grant-runtime-scheduling
+      author: LuisBonilla2260
+      labels: "HU-APT-001,dcl,grants"
+      comment: "Grant the externally provisioned runtime role DML on scheduling tables; no DDL, schema ownership or other-owner access."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname='appointments_runtime' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolbypassrls"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND pg_catalog.pg_get_userbyid(nspowner)='appointments_runtime'"
+      changes:
+        - sqlFile:
+            path: 001_grant_runtime_scheduling.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/001_grant_runtime_scheduling.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
