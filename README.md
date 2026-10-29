@@ -213,3 +213,42 @@ Rollback drops only appointments.appointments RESTRICT; it is destructive and
 tested only in the disposable fixture. Production recovery requires its runbook.
 Local static/transport checks pass; PostgreSQL migration, constraint and rollback
 tests are BLOCKED by Docker daemon access. No production readiness is claimed.
+
+### DB-04: scheduling support, outbox and runtime grants (HU-APT-001)
+
+Completes the remaining HU-APT-001 persistence scope (issue #4) on top of DB-03B-B:
+
+- 003-appointments-create-dentist-schedules: appointments.dentist_schedules (one
+  row per dentist, optimistic version, audit pairs) plus availability_intervals and
+  blocked_intervals. Each interval table has a half-open [) immediate GiST exclusion
+  per schedule, a finite start<end CHECK and an ON DELETE RESTRICT owner FK.
+  The btree_gist namespace is resolved exactly as in DB-03B-B.
+- 004-appointments-create-outbox-events: owner-local outbox with the required
+  integration metadata (event id/type/version, aggregate, payload, correlation,
+  causation, actor, occurred/recorded, status, attempts, next retry, safe error code).
+  PUBLISHED requires published_at and vice versa. No business SQL defaults.
+- 005-appointments-create-outbox-events-indexes: partial relay index on
+  unpublished events (10_indexes, per Annex A order).
+- 006-appointments-grant-runtime-scheduling: DML-only grants to the externally
+  provisioned appointments_runtime role. The precondition HALTs unless the role
+  exists without superuser/createrole/createdb/replication/bypassrls and does not
+  own the schema. No DELETE on appointments, schedules or outbox; interval rows
+  can be deleted because availability replacement rewrites them. No DDL.
+
+The migration never creates roles or extensions. The disposable fixture creates a
+NOLOGIN appointments_runtime stand-in in init-test.sql. Production role name,
+login/credential binding and provisioner remain to be approved in dlc-docs.
+
+The default target is scripts/fixtures/db04-expected.json. -Baseline DB03 applies
+the released DB-03 changesets from the real master (update-count) and then upgrades,
+which is the previous-version check for this increment. DB01/DB02 remain available.
+
+```bat
+pwsh -File scripts\verify-db.ps1 -StaticOnly
+pwsh -File scripts\verify-db.ps1 -Baseline DB03
+```
+
+scripts/fixtures/scheduling-tests.ps1 adds rolled-back integrity cases for the new
+tables (exact SQLSTATE and constraint name) and privilege cases executed under
+SET LOCAL ROLE appointments_runtime: allowed DML succeeds; DELETE of audit-bearing
+rows, TRUNCATE, CREATE/ALTER/DROP and reading Liquibase metadata fail with 42501.
