@@ -25,7 +25,8 @@ $cases = @(
     @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql','GRANT SELECT, INSERT ON','GRANT SELECT, INSERT, UPDATE ON','Missing DB-05 declaration'),
     @('03_dcl/01_grants/002_grant_runtime_lifecycle.sql','INSERT, UPDATE ON appointments.appointment_reminders','INSERT, UPDATE, DELETE ON appointments.appointment_reminders','Lifecycle grant exceeds'),
     @('01_ddl/03_tables/005_create_appointment_reminders.sql','ON DELETE RESTRICT,','ON DELETE CASCADE,','Missing DB-05 declaration'),
-    @('05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql','uk_appointment_reminders_live_appointment_id RESTRICT','uk_appointment_reminders_live_appointment_id CASCADE','Unexpected DB-05 rollback scope')
+    @('05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql','uk_appointment_reminders_live_appointment_id RESTRICT','uk_appointment_reminders_live_appointment_id CASCADE','Unexpected DB-05 rollback scope'),
+    @('01_ddl/10_indexes/003_create_appointments_calendar_indexes.sql','CREATE INDEX idx_appointments_patient_id_start_at','CREATE UNIQUE INDEX idx_appointments_patient_id_start_at','Missing DB-06 declaration')
 )
 try {
     [void][IO.Directory]::CreateDirectory($probe)
