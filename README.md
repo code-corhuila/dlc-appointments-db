@@ -276,3 +276,34 @@ requires the baseline to be an ordered subsequence of the target and expects
 upgrades to append the remaining changesets in changelog order. -Baseline DB04
 applies the released HU-APT-001 changesets with --label-filter=HU-APT-001.
 scripts/fixtures/lifecycle-tests.ps1 adds 80 rolled-back cases.
+
+### DB-06: calendar query indexes (HU-APT-003)
+
+Issue #6 asks to verify the calendar projection and migrate only evidenced gaps.
+Before this increment appointments.appointments had only pk_appointments and the
+partial GiST exclusion, which covers PROGRAMADA/CONFIRMADA/EN_ATENCION only and so
+cannot serve a Dentist calendar that includes FINALIZADA, the patientId filter or the
+default createdAt/id page order of GET /api/v1/appointments (API-APT-01).
+011-appointments-create-appointments-calendar-indexes adds three btree indexes:
+(dentist_id, start_at), (patient_id, start_at) and (created_at, appointment_id).
+No table, column, projection or grant changes: the existing columns already hold the
+minimal identity/status the API projects. -Baseline DB05 applies the released
+HU-APT-001/002 state by label. scripts/fixtures/calendar-tests.ps1 checks the exact
+index definitions and that each query path is planned through its index.
+
+### DB-07: ongoing clinical assignments (HU-APT-004)
+
+Persistence for issue #7, metadata only (REL-001/002):
+
+- 012-appointments-create-clinical-assignments: patient/dentist identities, ACTIVE or
+  ENDED, 1-1000 character reason, started_at/by, and on ending ended_at/by plus the
+  required end_reason (the endings contract demands one) with version >= 2. ACTIVE
+  rows carry no ending fields. started_by <> dentist_id rejects Dentist
+  self-assignment. No clinical narrative column and no cross-owner FK.
+- 013-appointments-create-clinical-assignments-indexes: at most one ACTIVE
+  assignment per patient/dentist (ended rows stay as history), plus
+  patient/dentist/status and dentist/status authorization paths.
+- 014-appointments-grant-runtime-assignments: SELECT/INSERT/UPDATE only.
+
+-Baseline DB06 applies the released HU-APT-001..003 state by label.
+scripts/fixtures/assignment-tests.ps1 adds 31 rolled-back cases.

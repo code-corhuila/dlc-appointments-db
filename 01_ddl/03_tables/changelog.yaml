@@ -143,3 +143,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/005_create_appointment_reminders.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 012-appointments-create-clinical-assignments
+      author: LuisBonilla2260
+      labels: "HU-APT-004,ddl,tables"
+      comment: "Create ongoing clinical assignment metadata with audited ending and no clinical content."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='clinical_assignments'"
+      changes:
+        - sqlFile:
+            path: 006_create_clinical_assignments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/006_create_clinical_assignments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
