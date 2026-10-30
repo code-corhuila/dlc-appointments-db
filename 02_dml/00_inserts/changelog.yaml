@@ -1,1 +1,26 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 015-appointments-seed-synthetic-scheduling
+      author: LuisBonilla2260
+      context: "dev or qa"
+      labels: "seed,dml,inserts"
+      comment: "Synthetic dev/qa schedules, appointments, audit, reminders and one assignment; never runs in prod."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT (SELECT count(*) FROM appointments.dentist_schedules WHERE dentist_id IN ('a9900000-0000-4000-8000-0000000000d1','a9900000-0000-4000-8000-0000000000d2')) + (SELECT count(*) FROM appointments.appointments WHERE appointment_id::text LIKE 'a9900000-%') + (SELECT count(*) FROM appointments.clinical_assignments WHERE assignment_id::text LIKE 'a9900000-%')"
+      changes:
+        - sqlFile:
+            path: 001_seed_synthetic_scheduling.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/02_dml/00_inserts/001_seed_synthetic_scheduling.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

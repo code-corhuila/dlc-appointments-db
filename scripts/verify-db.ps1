@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
-    [ValidateSet('DB01','DB02','DB03','DB04','DB05','DB06')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db07-expected.json'
+    [ValidateSet('DB01','DB02','DB03','DB04','DB05','DB06','DB07')][string]$Baseline = 'DB01',
+    [string]$ExpectedManifest = 'scripts/fixtures/db08-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -25,7 +25,7 @@ function Identity($Changesets) {
 $target = Get-Content -LiteralPath (Join-Path $repo $ExpectedManifest) -Raw | ConvertFrom-Json
 $baselineState = if ($Baseline -eq 'DB02') {
     Get-Content -LiteralPath (Join-Path $repo 'scripts/fixtures/db02-expected.json') -Raw | ConvertFrom-Json
-} elseif ($Baseline -in @('DB03','DB04','DB05','DB06')) {
+} elseif ($Baseline -in @('DB03','DB04','DB05','DB06','DB07')) {
     # Released increments are applied from the real master: DB03 by count, later ones by HU labels.
     Get-Content -LiteralPath (Join-Path $repo "scripts/fixtures/$($Baseline.ToLower())-expected.json") -Raw | ConvertFrom-Json
 } else { [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()} }
@@ -42,7 +42,16 @@ foreach ($key in $baselineList) {
     $position++
 }
 # Liquibase appends pending changesets in changelog order after the applied baseline.
-$upgradeKeys = @($baselineList + @($targetList | Where-Object { $_ -notin $baselineList })) -join "`n"
+# The synthetic seed (context "dev or qa") is applied last, after the integrity suites ran on empty tables.
+$seedList = @($targetList | Where-Object { $_ -like '015-appointments-seed-synthetic-scheduling|*' })
+$businessList = @($targetList | Where-Object { $_ -notin $seedList })
+$emptyKeys = @($businessList + $seedList) -join "`n"
+$upgradeKeys = @($baselineList + @($businessList | Where-Object { $_ -notin $baselineList }) + $seedList) -join "`n"
+function Invoke-Deploy {
+    # Business changesets first (no seed context), then what a dev environment adds.
+    Invoke-Compose run --rm liquibase update '--contexts=verify'
+    Invoke-Compose run --rm liquibase update '--contexts=dev'
+}
 
 function Check-Changelog([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
@@ -254,6 +263,12 @@ function Assert-State($Expected) {
     if ((Query 'SELECT current_database();') -ne 'appointments_bootstrap_test') { throw 'Wrong test database' }
     if ((Query $isolationSql) -cne $initialIsolation) { throw 'Unrelated namespace/extension changed' }
 }
+function Assert-Seed($Expected) {
+    # Synthetic dev/qa rows of changeset 015: schedules, intervals, appointments, audit, reminders, assignment.
+    $present = @($Expected.changesets | Where-Object { $_.id -eq '015-appointments-seed-synthetic-scheduling' }).Count -eq 1
+    $counts = Query "SELECT concat_ws(',', (SELECT count(*) FROM appointments.dentist_schedules WHERE schedule_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.availability_intervals WHERE interval_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.blocked_intervals WHERE interval_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.appointments WHERE appointment_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.appointment_status_changes WHERE change_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.appointment_reminders WHERE reminder_id::text LIKE 'a9900000-%'), (SELECT count(*) FROM appointments.clinical_assignments WHERE assignment_id::text LIKE 'a9900000-%'));"
+    if ($counts -ne $(if ($present) { '2,2,1,3,7,3,1' } else { '0,0,0,0,0,0,0' })) { throw "Unexpected synthetic seed rows: $counts" }
+}
 function Get-MetadataIdentity {
     Query "SELECT oid::text FROM pg_class WHERE oid IN (to_regclass('appointments_liquibase.databasechangelog'),to_regclass('appointments_liquibase.databasechangeloglock')) ORDER BY oid;"
 }
@@ -292,7 +307,7 @@ try {
             Assert-State ([pscustomobject]@{schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()})
             $before = [pscustomobject]@{changesets=@();schemaPresent=$false;schemaOwner='bootstrap_test';relations=@()}
             $preservedHistory = '[]'
-            $expectedOrder = ''
+            $expectedOrder = $emptyKeys
             if ($scenario -eq 'upgrade') {
                 $before = $baselineState
                 $expectedOrder = $upgradeKeys
@@ -304,6 +319,8 @@ try {
                     Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001 or HU-APT-002'
                 } elseif ($Baseline -eq 'DB06') {
                     Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001 or HU-APT-002 or HU-APT-003'
+                } elseif ($Baseline -eq 'DB07') {
+                    Invoke-Compose run --rm liquibase update '--label-filter=HU-APT-001 or HU-APT-002 or HU-APT-003 or HU-APT-004'
                 } else {
                     $fixture = if ($Baseline -eq 'DB02') {'scripts/fixtures/db02-baseline.yml'} else {'scripts/fixtures/db01-baseline.yml'}
                     Invoke-Compose run --rm liquibase update "--changelog-file=$fixture"
@@ -315,8 +332,7 @@ try {
                 if (@($baselineMetadata -split "`n").Count -ne 2) { throw 'Baseline metadata missing' }
             }
             Invoke-Compose run --rm liquibase validate
-            Invoke-Compose run --rm liquibase update
-            Assert-History $target $expectedOrder
+            Invoke-Compose run --rm liquibase update '--contexts=verify'
             Assert-State $target
             $metadata = Get-MetadataIdentity
             if (@($metadata -split "`n").Count -ne 2) { throw 'Metadata tables missing' }
@@ -333,6 +349,9 @@ try {
             Assert-State $target
             Invoke-AssignmentTests $container
             Assert-State $target
+            Invoke-Compose run --rm liquibase update '--contexts=dev'
+            Assert-History $target $expectedOrder
+            Assert-Seed $target
             $historyBefore = Snapshot-History @($target.changesets).Count
 
             Invoke-Compose run --rm liquibase update
@@ -343,12 +362,14 @@ try {
             if ($rollbackCount -gt 0) {
                 Invoke-Compose run --rm liquibase rollback-count "--count=$rollbackCount"
                 Assert-State $before
+                if (@($before.changesets | Where-Object { $_.id -eq '012-appointments-create-clinical-assignments' }).Count) { Assert-Seed $before }
                 Assert-History $before
                 if ((Snapshot-History @($before.changesets).Count) -cne $preservedHistory) { throw 'Rollback changed baseline history' }
                 if ((Get-MetadataIdentity) -cne $metadata) { throw 'Rollback replaced/deleted metadata' }
-                Invoke-Compose run --rm liquibase update
+                Invoke-Deploy
                 Assert-State $target
                 Assert-History $target $expectedOrder
+                Assert-Seed $target
                 if ((Get-MetadataIdentity) -cne $metadata) { throw 'Reconstruction replaced metadata' }
             } else { Write-Host 'NO NEW CHANGESETS: baseline equals target; rollback/reconstruction not exercised here.' }
             if ((Snapshot-History @($before.changesets).Count) -cne $preservedHistory) { throw 'Upgrade/reconstruction changed baseline history' }
