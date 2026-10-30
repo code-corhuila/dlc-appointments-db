@@ -53,6 +53,11 @@ Deployment order for one environment:
 4. The API connects as `appointments_runtime` (`SELECT`, `INSERT`, `UPDATE` from the owner
    grants; no DDL, `DELETE` or `TRUNCATE`). Its credentials are a separate secret per environment.
 
+Changeset `015-appointments-seed-synthetic-scheduling` (context `dev or qa`) adds synthetic rows in the
+`a9900000-...` identifier range: two dentist schedules with availability and one block, three
+appointments (`PROGRAMADA`, `CONFIRMADA`, `FINALIZADA`) with their audit and reminders, and one active
+clinical assignment. It never runs in prod. The identifiers are not real Auth or Patients records.
+
 `pwsh -File scripts/test-environment-migration.ps1` runs steps 1-3 for dev, qa and prod against a
 disposable PostgreSQL and checks ownership, the runtime owner scope and the denied operations.
 
