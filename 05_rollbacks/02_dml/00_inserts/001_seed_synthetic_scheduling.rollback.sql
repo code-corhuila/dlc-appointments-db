@@ -1,0 +1,8 @@
+-- Removes only the synthetic dev/qa rows of changeset 015, children first.
+DELETE FROM appointments.clinical_assignments WHERE assignment_id = 'a9900000-0000-4000-8000-000000000901';
+DELETE FROM appointments.appointment_reminders WHERE reminder_id IN ('a9900000-0000-4000-8000-000000000701', 'a9900000-0000-4000-8000-000000000702', 'a9900000-0000-4000-8000-000000000703');
+DELETE FROM appointments.appointment_status_changes WHERE appointment_id IN ('a9900000-0000-4000-8000-000000000401', 'a9900000-0000-4000-8000-000000000402', 'a9900000-0000-4000-8000-000000000403');
+DELETE FROM appointments.appointments WHERE appointment_id IN ('a9900000-0000-4000-8000-000000000401', 'a9900000-0000-4000-8000-000000000402', 'a9900000-0000-4000-8000-000000000403');
+DELETE FROM appointments.blocked_intervals WHERE interval_id = 'a9900000-0000-4000-8000-000000000301';
+DELETE FROM appointments.availability_intervals WHERE interval_id IN ('a9900000-0000-4000-8000-000000000201', 'a9900000-0000-4000-8000-000000000202');
+DELETE FROM appointments.dentist_schedules WHERE schedule_id IN ('a9900000-0000-4000-8000-000000000101', 'a9900000-0000-4000-8000-000000000102');

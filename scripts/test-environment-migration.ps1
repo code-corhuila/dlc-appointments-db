@@ -8,7 +8,7 @@ $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $postgresImage = 'postgres:16.13'
 $migrate = Join-Path $repo 'deploy/compose.migrate.yml'
 $bootstrap = Join-Path $repo 'deploy/bootstrap.sql'
-$expectedChangesets = 14
+$businessChangesets = 14
 
 function New-Secret { [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)) }
 function Assert-Exit([string]$What) { if ($LASTEXITCODE -ne 0) { throw "$What failed with exit $LASTEXITCODE" } }
@@ -72,8 +72,13 @@ foreach ($environment in $Environments) {
         }
         Migrate 'update'
 
+        # The synthetic seed (context "dev or qa") applies to dev and qa only, never to prod.
+        $seeded = $environment -ne 'prod'
+        $expectedChangesets = $businessChangesets + [int]$seeded
         $applied = Scalar 'dlc_admin' $admin 'SELECT count(*) FROM appointments_liquibase.databasechangelog'
         if ([int]$applied -ne $expectedChangesets) { throw "Expected $expectedChangesets changesets, found $applied" }
+        $seedRows = Scalar 'dlc_admin' $admin "SELECT count(*) FROM appointments.appointments WHERE appointment_id::text LIKE 'a9900000-%'"
+        if ([int]$seedRows -ne $(if ($seeded) { 3 } else { 0 })) { throw "Unexpected synthetic rows in ${environment}: $seedRows" }
         $owner = Scalar 'dlc_admin' $admin "SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE n.nspname = 'appointments'"
         if ($owner -ne 'appointments_migrator') { throw "Unexpected appointments schema owner: $owner" }
         $foreign = Scalar 'dlc_admin' $admin "SELECT count(*) FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner WHERE c.relnamespace = 'appointments'::regnamespace AND r.rolname <> 'appointments_migrator'"
