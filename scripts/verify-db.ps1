@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
     [ValidateSet('DB01','DB02','DB03','DB04','DB05','DB06','DB07')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db09-expected.json'
+    [string]$ExpectedManifest = 'scripts/fixtures/db10-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -14,6 +14,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixtures/calendar-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/assignment-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/idempotency-inbox-tests.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/completion-gate-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -244,6 +245,22 @@ foreach ($pair in @(
     $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
     if ($sql -cne $pair[1]) { throw "Unexpected DB-08 rollback scope: $($pair[0])" }
 }
+# DB-09 to DB-11 structural safeguards: owned tables, token hash only, insert-only declarations.
+foreach ($file in @('01_ddl/03_tables/009_create_care_completions.sql','01_ddl/03_tables/010_create_patient_gates.sql','01_ddl/03_tables/011_create_patient_guards.sql','01_ddl/04_alter/001_alter_reminder_outcome_history.sql','03_dcl/01_grants/005_grant_runtime_completions_gates.sql')) {
+    $text = Get-Content -LiteralPath (Join-Path $repo $file) -Raw
+    if ($text -match '(?i)\bDEFAULT\b|\b(?:CREATE|ALTER|DROP)\s+(?:EXTENSION|ROLE|SCHEMA)\b|\bCASCADE\b|\b(?:iam|patients|billing|clinical)\.') { throw "Unexpected default, extension/role/schema mutation, CASCADE or other-owner reference: $file" }
+}
+if ((Get-Content -LiteralPath (Join-Path $repo '01_ddl/03_tables/011_create_patient_guards.sql') -Raw) -match '(?i)\btoken\s+text\b') { throw 'Guards store only the token hash' }
+if ((Get-Content -LiteralPath (Join-Path $repo '01_ddl/03_tables/009_create_care_completions.sql') -Raw) -match '(?i)\b(?:procedure_ids|manual_charge_ids|narrative|payload)\b') { throw 'Care completions keep identifiers only' }
+$gateGrants = Get-Content -LiteralPath (Join-Path $repo '03_dcl/01_grants/005_grant_runtime_completions_gates.sql') -Raw
+if ($gateGrants -match '(?i)\bGRANT\s+ALL\b|\bTRUNCATE\b|\bDELETE\b|\bWITH\s+GRANT\s+OPTION\b' -or $gateGrants -notmatch 'GRANT SELECT, INSERT ON appointments\.care_completions TO appointments_runtime;') { throw 'Completion/gate grant exceeds DB-09/DB-10 scope' }
+foreach ($pair in @(
+    @('05_rollbacks/01_ddl/03_tables/009_create_care_completions.rollback.sql','DROP TABLE appointments.care_completions RESTRICT;'),
+    @('05_rollbacks/01_ddl/03_tables/010_create_patient_gates.rollback.sql','DROP TABLE appointments.patient_gates RESTRICT;'),
+    @('05_rollbacks/01_ddl/03_tables/011_create_patient_guards.rollback.sql','DROP TABLE appointments.patient_guards RESTRICT;'))) {
+    $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
+    if ($sql -cne $pair[1]) { throw "Unexpected DB-09/DB-10 rollback scope: $($pair[0])" }
+}
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -365,6 +382,8 @@ try {
             Invoke-AssignmentTests $container
             Assert-State $target
             Invoke-IdempotencyInboxTests $container
+            Assert-State $target
+            Invoke-CompletionGateTests $container
             Assert-State $target
             Invoke-Compose run --rm liquibase update '--contexts=dev'
             Assert-History $target $expectedOrder

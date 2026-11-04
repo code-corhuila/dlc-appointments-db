@@ -1,1 +1,28 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 022-appointments-alter-reminder-outcome-history
+      author: bsbedoya
+      labels: "DB-11,ddl,alter"
+      comment: "Let an invalidated reminder keep its delivery history so a reschedule can replace a delivered one (D10)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_constraint WHERE conname='ck_appointment_reminders_outcome' AND conrelid='appointments.appointment_reminders'::regclass"
+      changes:
+        - sqlFile:
+            path: 001_alter_reminder_outcome_history.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/001_alter_reminder_outcome_history.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
