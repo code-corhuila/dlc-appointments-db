@@ -362,3 +362,25 @@ Persistence for the DB-08 owner contract in dlc-docs (Norma 5.3.8 and event cons
 The new changesets carry only the DB-08 label, so -Baseline DB07 applies the released
 HU-APT-001..004 state and the upgrade adds them. scripts/fixtures/idempotency-inbox-tests.ps1
 adds 50 rolled-back cases; db09-expected.json is the default target manifest.
+
+### DB-09 to DB-11: care completion, patient gates and reminder history
+
+Persistence for the DB-09 to DB-11 owner contract in dlc-docs (decisions D8-D10):
+
+- 019-appointments-create-care-completions: one ClinicalCareCompleted declaration per
+  appointment (foreign key to the appointment, unique event_id). Identifiers only; no
+  procedure or charge lists. Insert-only for the runtime.
+- 020-appointments-create-patient-gates: ADR-017 gate per patient, OPEN, BLOCKED or
+  INACTIVE; a missing row means OPEN.
+- 021-appointments-create-patient-guards: deactivation and activity guards, unique by
+  patient, operationId and caller service; only the SHA-256 token hash is stored and
+  guards never expire.
+- 022-appointments-alter-reminder-outcome-history: an INVALIDATED reminder may keep the
+  delivery history of a SENT/DELIVERY_FAILED one, so a reschedule can replace it. Its
+  rollback fails while such a row exists.
+- 023-appointments-grant-runtime-completions-gates: SELECT/INSERT on declarations,
+  SELECT/INSERT/UPDATE on gates and guards. No DELETE, TRUNCATE or DDL.
+
+The changesets carry only DB-09 to DB-11 labels, so -Baseline DB07 still applies the released
+HU-APT-001..004 state. scripts/fixtures/completion-gate-tests.ps1 adds 62 rolled-back cases;
+db10-expected.json is the default target manifest.
