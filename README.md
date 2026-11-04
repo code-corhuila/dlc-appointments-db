@@ -344,3 +344,21 @@ Persistence for issue #7, metadata only (REL-001/002):
 
 -Baseline DB06 applies the released HU-APT-001..003 state by label.
 scripts/fixtures/assignment-tests.ps1 adds 31 rolled-back cases.
+
+### DB-08: idempotency records and consumer inbox (HU-APT-001 to HU-APT-004)
+
+Persistence for the DB-08 owner contract in dlc-docs (Norma 5.3.8 and event consumption):
+
+- 016-appointments-create-idempotency-keys: one row per actor, operation and key
+  (8-128 characters), with the SHA-256 request hash, the resource it created or changed
+  and the 200/201 status to replay. Written in the transaction of the business change;
+  no expiry.
+- 017-appointments-create-inbox-events: one row per consumed event_id, PROCESSED (with
+  processed_at) or FAILED (with a safe error code). Identifiers only; event content is
+  never copied.
+- 018-appointments-grant-runtime-idempotency-inbox: SELECT/INSERT on idempotency
+  records (append-only), SELECT/INSERT/UPDATE on the inbox. No DELETE, TRUNCATE or DDL.
+
+The new changesets carry only the DB-08 label, so -Baseline DB07 applies the released
+HU-APT-001..004 state and the upgrade adds them. scripts/fixtures/idempotency-inbox-tests.ps1
+adds 50 rolled-back cases; db09-expected.json is the default target manifest.

@@ -1,7 +1,7 @@
 param(
     [switch]$StaticOnly,
     [ValidateSet('DB01','DB02','DB03','DB04','DB05','DB06','DB07')][string]$Baseline = 'DB01',
-    [string]$ExpectedManifest = 'scripts/fixtures/db08-expected.json'
+    [string]$ExpectedManifest = 'scripts/fixtures/db09-expected.json'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -13,6 +13,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'fixtures/lifecycle-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/calendar-tests.ps1')
 . (Join-Path $PSScriptRoot 'fixtures/assignment-tests.ps1')
+. (Join-Path $PSScriptRoot 'fixtures/idempotency-inbox-tests.ps1')
 $entry = Join-Path $repo 'changelog/changelog-master.yaml'
 $seen = [Collections.Generic.HashSet[string]]::new()
 $id = '001-appointments-create-schema'
@@ -229,6 +230,20 @@ foreach ($pair in @(
     $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
     if ($sql -cne $pair[1]) { throw "Unexpected DB-07 rollback scope: $($pair[0])" }
 }
+# DB-08 structural safeguards: owned tables only, append-only idempotency, no payload copy in the inbox.
+foreach ($file in @('01_ddl/03_tables/007_create_idempotency_keys.sql','01_ddl/03_tables/008_create_inbox_events.sql','03_dcl/01_grants/004_grant_runtime_idempotency_inbox.sql')) {
+    $text = Get-Content -LiteralPath (Join-Path $repo $file) -Raw
+    if ($text -match '(?i)\bDEFAULT\b|\bREFERENCES\b|\b(?:CREATE|ALTER|DROP)\s+(?:EXTENSION|ROLE|SCHEMA)\b|\bCASCADE\b|\b(?:iam|patients|billing|clinical)\.') { throw "Unexpected default, cross-owner FK, extension/role/schema mutation or CASCADE: $file" }
+}
+if ((Get-Content -LiteralPath (Join-Path $repo '01_ddl/03_tables/008_create_inbox_events.sql') -Raw) -match '(?i)\bpayload\b') { throw 'Inbox must not copy event payloads' }
+$idempotencyGrants = Get-Content -LiteralPath (Join-Path $repo '03_dcl/01_grants/004_grant_runtime_idempotency_inbox.sql') -Raw
+if ($idempotencyGrants -match '(?i)\bGRANT\s+ALL\b|\bTRUNCATE\b|\bDELETE\b|\bWITH\s+GRANT\s+OPTION\b' -or $idempotencyGrants -notmatch 'GRANT SELECT, INSERT ON appointments\.idempotency_keys TO appointments_runtime;') { throw 'Idempotency/inbox grant exceeds DB-08 scope' }
+foreach ($pair in @(
+    @('05_rollbacks/01_ddl/03_tables/007_create_idempotency_keys.rollback.sql','DROP TABLE appointments.idempotency_keys RESTRICT;'),
+    @('05_rollbacks/01_ddl/03_tables/008_create_inbox_events.rollback.sql','DROP TABLE appointments.inbox_events RESTRICT;'))) {
+    $sql = @(Get-Content -LiteralPath (Join-Path $repo $pair[0]) | Where-Object { $_.Trim() -and $_ -notmatch '^\s*--' }) -join ' '
+    if ($sql -cne $pair[1]) { throw "Unexpected DB-08 rollback scope: $($pair[0])" }
+}
 Write-Host "STATIC PASS: $($seen.Count) reachable changelogs; $($identities.Count) expected changesets."
 Write-Host 'Static checks cover supported external-SQL grammar plus DB-02 invariants; Liquibase validates YAML at runtime.'
 if ($StaticOnly) { return }
@@ -348,6 +363,8 @@ try {
             Invoke-CalendarTests $container
             Assert-State $target
             Invoke-AssignmentTests $container
+            Assert-State $target
+            Invoke-IdempotencyInboxTests $container
             Assert-State $target
             Invoke-Compose run --rm liquibase update '--contexts=dev'
             Assert-History $target $expectedOrder
