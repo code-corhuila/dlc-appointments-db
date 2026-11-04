@@ -107,3 +107,30 @@ databaseChangeLog:
             path: ../../05_rollbacks/03_dcl/01_grants/004_grant_runtime_idempotency_inbox.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 023-appointments-grant-runtime-completions-gates
+      author: bsbedoya
+      labels: "DB-10,dcl,grants"
+      comment: "Grant insert-only declarations and gate/guard state changes; no DELETE or DDL."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname='appointments_runtime' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolbypassrls"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege('appointments_runtime',oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 005_grant_runtime_completions_gates.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/005_grant_runtime_completions_gates.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
