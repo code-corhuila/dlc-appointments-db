@@ -224,3 +224,84 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/008_create_inbox_events.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 019-appointments-create-care-completions
+      author: bsbedoya
+      labels: "DB-09,ddl,tables"
+      comment: "Create the insert-only Dentist completion declaration per appointment (D8)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='care_completions'"
+      changes:
+        - sqlFile:
+            path: 009_create_care_completions.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/009_create_care_completions.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 020-appointments-create-patient-gates
+      author: bsbedoya
+      labels: "DB-10,ddl,tables"
+      comment: "Create the ADR-017 per-patient gate (D9)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='patient_gates'"
+      changes:
+        - sqlFile:
+            path: 010_create_patient_gates.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/010_create_patient_gates.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 021-appointments-create-patient-guards
+      author: bsbedoya
+      labels: "DB-10,ddl,tables"
+      comment: "Create ADR-017 guards with token hash only, unique per patient, operation and caller (D9)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='patient_guards'"
+      changes:
+        - sqlFile:
+            path: 011_create_patient_guards.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/011_create_patient_guards.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
