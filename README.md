@@ -384,3 +384,12 @@ Persistence for the DB-09 to DB-11 owner contract in dlc-docs (decisions D8-D10)
 The changesets carry only DB-09 to DB-11 labels, so -Baseline DB07 still applies the released
 HU-APT-001..004 state. scripts/fixtures/completion-gate-tests.ps1 adds 62 rolled-back cases;
 db10-expected.json is the default target manifest.
+
+## Waiting list and appointment types (HU-APT-005, HU-APT-006)
+
+DB-12 and DB-13 add:
+- `appointments.appointment_types`: a catalog owned by migrations and seeded in every environment;
+- `appointments.waiting_list_entries`, with one `WAITING` entry per patient and preferred dentist. `SCHEDULED` requires an appointment; `WITHDRAWN` and `SCHEDULED` record who resolved the entry and when;
+- the nullable `appointments.type_code` reference.
+
+The runtime role reads the catalog and creates or resolves waiting entries. It cannot delete entries or change the catalog. To verify, run `bash scripts/test-waiting-list-types.sh`: it bootstraps a disposable PostgreSQL, migrates with the `dev` context and runs `scripts/fixtures/waiting-list-types.sql`.
