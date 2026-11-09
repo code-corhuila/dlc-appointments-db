@@ -134,3 +134,27 @@ databaseChangeLog:
             path: ../../05_rollbacks/03_dcl/01_grants/005_grant_runtime_completions_gates.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 028-appointments-grant-runtime-waiting-list-types
+      author: LuisBonilla2260
+      labels: "DB-12,DB-13,dcl,grants"
+      comment: "Grant catalog reads and waiting-list create/resolve; no DELETE or catalog writes."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_roles WHERE rolname='appointments_runtime'"
+      changes:
+        - sqlFile:
+            path: 006_grant_runtime_waiting_list_types.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/006_grant_runtime_waiting_list_types.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

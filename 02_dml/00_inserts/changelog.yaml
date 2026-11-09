@@ -24,3 +24,27 @@ databaseChangeLog:
             path: ../../05_rollbacks/02_dml/00_inserts/001_seed_synthetic_scheduling.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 027-appointments-seed-appointment-types
+      author: LuisBonilla2260
+      labels: "DB-12,dml,inserts"
+      comment: "Initial appointment-type catalog; configuration for every environment."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM appointments.appointment_types"
+      changes:
+        - sqlFile:
+            path: 002_seed_appointment_types.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/02_dml/00_inserts/002_seed_appointment_types.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
