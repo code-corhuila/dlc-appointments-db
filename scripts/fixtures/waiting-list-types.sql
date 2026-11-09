@@ -65,6 +65,10 @@ INSERT INTO appointments.waiting_list_entries
 VALUES ('91000000-0000-4000-8000-000000000004', '92000000-0000-4000-8000-000000000001',
         '93000000-0000-4000-8000-000000000001', 'De nuevo', 'WAITING', now(),
         '94000000-0000-4000-8000-000000000001', 1);
+INSERT INTO appointments.idempotency_keys
+  (actor_user_id, operation, idempotency_key, request_hash, resource_type, resource_id, response_status, created_at)
+VALUES ('94000000-0000-4000-8000-000000000001', 'CREATE_WAITING_LIST_ENTRY', 'wait-key-0001', repeat('a', 64),
+        'WaitingListEntry', '91000000-0000-4000-8000-000000000004', 201, now());
 RESET ROLE;
 
 DO $$
