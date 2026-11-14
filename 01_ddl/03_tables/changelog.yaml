@@ -305,3 +305,51 @@ databaseChangeLog:
             path: ../../05_rollbacks/01_ddl/03_tables/011_create_patient_guards.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: 024-appointments-create-appointment-types
+      author: LuisBonilla2260
+      labels: "DB-12,ddl,tables"
+      comment: "Create the migration-owned appointment-type catalog (HU-APT-006)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_types'"
+      changes:
+        - sqlFile:
+            path: 012_create_appointment_types.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/012_create_appointment_types.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 025-appointments-create-waiting-list-entries
+      author: LuisBonilla2260
+      labels: "DB-13,ddl,tables"
+      comment: "Create waiting-list entries with one WAITING entry per patient and preferred dentist (HU-APT-005)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='waiting_list_entries'"
+      changes:
+        - sqlFile:
+            path: 013_create_waiting_list_entries.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/013_create_waiting_list_entries.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
