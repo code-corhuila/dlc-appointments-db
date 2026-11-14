@@ -1,0 +1,3 @@
+DROP INDEX appointments.idx_clinical_assignments_dentist_id_status RESTRICT;
+DROP INDEX appointments.idx_clinical_assignments_patient_id_dentist_id_status RESTRICT;
+DROP INDEX appointments.uk_clinical_assignments_active_patient_dentist RESTRICT;

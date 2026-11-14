@@ -1,1 +1,76 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 022-appointments-alter-reminder-outcome-history
+      author: bsbedoya
+      labels: "DB-11,ddl,alter"
+      comment: "Let an invalidated reminder keep its delivery history so a reschedule can replace a delivered one (D10)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_constraint WHERE conname='ck_appointment_reminders_outcome' AND conrelid='appointments.appointment_reminders'::regclass"
+      changes:
+        - sqlFile:
+            path: 001_alter_reminder_outcome_history.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/001_alter_reminder_outcome_history.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 026-appointments-alter-appointments-type-code
+      author: LuisBonilla2260
+      labels: "DB-12,ddl,alter"
+      comment: "Add the optional appointment type reference (HU-APT-006)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM information_schema.columns WHERE table_schema='appointments' AND table_name='appointments' AND column_name='type_code'"
+      changes:
+        - sqlFile:
+            path: 002_alter_appointments_type_code.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/002_alter_appointments_type_code.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 029-appointments-alter-idempotency-waiting-list-resource
+      author: LuisBonilla2260
+      labels: "DB-13,ddl,alter"
+      comment: "Allow WaitingListEntry as an idempotency resource type (HU-APT-005)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_constraint WHERE conname='ck_idempotency_keys_resource_type'"
+      changes:
+        - sqlFile:
+            path: 003_alter_idempotency_waiting_list_resource.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/003_alter_idempotency_waiting_list_resource.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

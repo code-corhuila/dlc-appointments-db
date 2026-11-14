@@ -1,0 +1,8 @@
+{
+  "changesets": [
+    { "id": "001-appointments-create-schema", "author": "bsbedoya", "filename": "01_ddl/01_schemas/changelog.yaml" }
+  ],
+  "schemaPresent": true,
+  "schemaOwner": "bootstrap_test",
+  "relations": []
+}

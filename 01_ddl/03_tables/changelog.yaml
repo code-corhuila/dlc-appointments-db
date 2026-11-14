@@ -1,1 +1,355 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 002-appointments-create-appointments
+      author: bsbedoya
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create appointments and immediate active-dentist exclusion atomically; btree_gist is an external dependency."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='appointments' AND t.typname='appointments'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments'"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace JOIN pg_catalog.pg_opclass c ON c.opcnamespace=n.oid JOIN pg_catalog.pg_am a ON a.oid=c.opcmethod JOIN pg_catalog.pg_depend d ON d.classid='pg_catalog.pg_opclass'::pg_catalog.regclass AND d.objid=c.oid AND d.refclassid='pg_catalog.pg_extension'::pg_catalog.regclass AND d.refobjid=e.oid AND d.deptype='e' WHERE e.extname='btree_gist' AND c.opcname='gist_uuid_ops' AND c.opcintype='pg_catalog.uuid'::pg_catalog.regtype AND a.amname='gist' AND has_schema_privilege(current_user,n.oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 001_create_appointments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/001_create_appointments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 003-appointments-create-dentist-schedules
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create dentist schedules with non-overlapping availability and blocked intervals; btree_gist is an external dependency."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('dentist_schedules','availability_intervals','blocked_intervals')"
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace JOIN pg_catalog.pg_opclass c ON c.opcnamespace=n.oid JOIN pg_catalog.pg_am a ON a.oid=c.opcmethod JOIN pg_catalog.pg_depend d ON d.classid='pg_catalog.pg_opclass'::pg_catalog.regclass AND d.objid=c.oid AND d.refclassid='pg_catalog.pg_extension'::pg_catalog.regclass AND d.refobjid=e.oid AND d.deptype='e' WHERE e.extname='btree_gist' AND c.opcname='gist_uuid_ops' AND c.opcintype='pg_catalog.uuid'::pg_catalog.regtype AND a.amname='gist' AND has_schema_privilege(current_user,n.oid,'USAGE')"
+      changes:
+        - sqlFile:
+            path: 002_create_dentist_schedules.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/002_create_dentist_schedules.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 004-appointments-create-outbox-events
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,tables"
+      comment: "Create the owner-local outbox committed atomically with Appointments state."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='outbox_events'"
+      changes:
+        - sqlFile:
+            path: 003_create_outbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/003_create_outbox_events.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 007-appointments-create-appointment-status-changes
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,tables"
+      comment: "Create the insert-only lifecycle audit with allowed transitions and Administrator override reason."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r' AND has_schema_privilege(current_user,n.oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_status_changes'"
+      changes:
+        - sqlFile:
+            path: 004_create_appointment_status_changes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/004_create_appointment_status_changes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 008-appointments-create-appointment-reminders
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,tables"
+      comment: "Create versioned informational reminder work with invalidation and safe delivery outcomes."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r' AND has_schema_privilege(current_user,n.oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_reminders'"
+      changes:
+        - sqlFile:
+            path: 005_create_appointment_reminders.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/005_create_appointment_reminders.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 012-appointments-create-clinical-assignments
+      author: LuisBonilla2260
+      labels: "HU-APT-004,ddl,tables"
+      comment: "Create ongoing clinical assignment metadata with audited ending and no clinical content."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='clinical_assignments'"
+      changes:
+        - sqlFile:
+            path: 006_create_clinical_assignments.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/006_create_clinical_assignments.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 016-appointments-create-idempotency-keys
+      author: bsbedoya
+      labels: "DB-08,ddl,tables"
+      comment: "Create append-only idempotency records committed with the change they protect (Norma 5.3.8)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='idempotency_keys'"
+      changes:
+        - sqlFile:
+            path: 007_create_idempotency_keys.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/007_create_idempotency_keys.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 017-appointments-create-inbox-events
+      author: bsbedoya
+      labels: "DB-08,ddl,tables"
+      comment: "Create the consumer inbox that deduplicates delivered events by event_id."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='inbox_events'"
+      changes:
+        - sqlFile:
+            path: 008_create_inbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/008_create_inbox_events.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 019-appointments-create-care-completions
+      author: bsbedoya
+      labels: "DB-09,ddl,tables"
+      comment: "Create the insert-only Dentist completion declaration per appointment (D8)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='care_completions'"
+      changes:
+        - sqlFile:
+            path: 009_create_care_completions.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/009_create_care_completions.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 020-appointments-create-patient-gates
+      author: bsbedoya
+      labels: "DB-10,ddl,tables"
+      comment: "Create the ADR-017 per-patient gate (D9)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='patient_gates'"
+      changes:
+        - sqlFile:
+            path: 010_create_patient_gates.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/010_create_patient_gates.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 021-appointments-create-patient-guards
+      author: bsbedoya
+      labels: "DB-10,ddl,tables"
+      comment: "Create ADR-017 guards with token hash only, unique per patient, operation and caller (D9)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='appointments' AND has_schema_privilege(current_user,oid,'CREATE')"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='patient_guards'"
+      changes:
+        - sqlFile:
+            path: 011_create_patient_guards.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/011_create_patient_guards.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 024-appointments-create-appointment-types
+      author: LuisBonilla2260
+      labels: "DB-12,ddl,tables"
+      comment: "Create the migration-owned appointment-type catalog (HU-APT-006)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_types'"
+      changes:
+        - sqlFile:
+            path: 012_create_appointment_types.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/012_create_appointment_types.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 025-appointments-create-waiting-list-entries
+      author: LuisBonilla2260
+      labels: "DB-13,ddl,tables"
+      comment: "Create waiting-list entries with one WAITING entry per patient and preferred dentist (HU-APT-005)."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='waiting_list_entries'"
+      changes:
+        - sqlFile:
+            path: 013_create_waiting_list_entries.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/013_create_waiting_list_entries.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

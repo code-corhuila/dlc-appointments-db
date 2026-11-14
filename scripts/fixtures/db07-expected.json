@@ -1,0 +1,110 @@
+{
+  "changesets": [
+    {
+      "id": "001-appointments-create-schema",
+      "author": "bsbedoya",
+      "filename": "01_ddl/01_schemas/changelog.yaml"
+    },
+    {
+      "id": "002-appointments-create-appointments",
+      "author": "bsbedoya",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "003-appointments-create-dentist-schedules",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "004-appointments-create-outbox-events",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "007-appointments-create-appointment-status-changes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "008-appointments-create-appointment-reminders",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "012-appointments-create-clinical-assignments",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "005-appointments-create-outbox-events-indexes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/10_indexes/changelog.yaml"
+    },
+    {
+      "id": "009-appointments-create-appointment-reminders-indexes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/10_indexes/changelog.yaml"
+    },
+    {
+      "id": "011-appointments-create-appointments-calendar-indexes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/10_indexes/changelog.yaml"
+    },
+    {
+      "id": "013-appointments-create-clinical-assignments-indexes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/10_indexes/changelog.yaml"
+    },
+    {
+      "id": "006-appointments-grant-runtime-scheduling",
+      "author": "LuisBonilla2260",
+      "filename": "03_dcl/01_grants/changelog.yaml"
+    },
+    {
+      "id": "010-appointments-grant-runtime-lifecycle",
+      "author": "LuisBonilla2260",
+      "filename": "03_dcl/01_grants/changelog.yaml"
+    },
+    {
+      "id": "014-appointments-grant-runtime-assignments",
+      "author": "LuisBonilla2260",
+      "filename": "03_dcl/01_grants/changelog.yaml"
+    }
+  ],
+  "schemaPresent": true,
+  "schemaOwner": "bootstrap_test",
+  "relations": [
+    "appointments.appointment_reminders:r",
+    "appointments.appointment_status_changes:r",
+    "appointments.appointments:r",
+    "appointments.availability_intervals:r",
+    "appointments.blocked_intervals:r",
+    "appointments.clinical_assignments:r",
+    "appointments.dentist_schedules:r",
+    "appointments.ex_appointments_dentist_overlap:i",
+    "appointments.ex_availability_intervals_schedule_overlap:i",
+    "appointments.ex_blocked_intervals_schedule_overlap:i",
+    "appointments.idx_appointment_reminders_due_at:i",
+    "appointments.idx_appointments_created_at_appointment_id:i",
+    "appointments.idx_appointments_dentist_id_start_at:i",
+    "appointments.idx_appointments_patient_id_start_at:i",
+    "appointments.idx_clinical_assignments_dentist_id_status:i",
+    "appointments.idx_clinical_assignments_patient_id_dentist_id_status:i",
+    "appointments.idx_outbox_events_next_attempt_at:i",
+    "appointments.outbox_events:r",
+    "appointments.pk_appointment_reminders:i",
+    "appointments.pk_appointment_status_changes:i",
+    "appointments.pk_appointments:i",
+    "appointments.pk_availability_intervals:i",
+    "appointments.pk_blocked_intervals:i",
+    "appointments.pk_clinical_assignments:i",
+    "appointments.pk_dentist_schedules:i",
+    "appointments.pk_outbox_events:i",
+    "appointments.uk_appointment_reminders_appointment_version:i",
+    "appointments.uk_appointment_reminders_delivery_id:i",
+    "appointments.uk_appointment_reminders_live_appointment_id:i",
+    "appointments.uk_appointment_status_changes_appointment_version:i",
+    "appointments.uk_clinical_assignments_active_patient_dentist:i",
+    "appointments.uk_dentist_schedules_dentist_id:i"
+  ]
+}

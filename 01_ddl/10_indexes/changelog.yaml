@@ -1,1 +1,109 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - changeSet:
+      id: 005-appointments-create-outbox-events-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-001,ddl,indexes"
+      comment: "Index unpublished outbox events for the relay polling path."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='outbox_events' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='idx_outbox_events_next_attempt_at'"
+      changes:
+        - sqlFile:
+            path: 001_create_outbox_events_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/001_create_outbox_events_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 009-appointments-create-appointment-reminders-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-002,ddl,indexes"
+      comment: "Enforce one live reminder per appointment and index pending reminders by due instant."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointment_reminders' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('uk_appointment_reminders_live_appointment_id','idx_appointment_reminders_due_at')"
+      changes:
+        - sqlFile:
+            path: 002_create_appointment_reminders_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/002_create_appointment_reminders_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 011-appointments-create-appointments-calendar-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-003,ddl,indexes"
+      comment: "Index the approved appointment list paths: dentist calendar, patient filter and default createdAt/id order."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='appointments' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('idx_appointments_dentist_id_start_at','idx_appointments_patient_id_start_at','idx_appointments_created_at_appointment_id')"
+      changes:
+        - sqlFile:
+            path: 003_create_appointments_calendar_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/003_create_appointments_calendar_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+  - changeSet:
+      id: 013-appointments-create-clinical-assignments-indexes
+      author: LuisBonilla2260
+      labels: "HU-APT-004,ddl,indexes"
+      comment: "Enforce one active assignment per patient/dentist and index patient/dentist/status authorization paths."
+      runInTransaction: true
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: postgresql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname='clinical_assignments' AND c.relkind='r'"
+        - sqlCheck:
+            expectedResult: "0"
+            sql: "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='appointments' AND c.relname IN ('uk_clinical_assignments_active_patient_dentist','idx_clinical_assignments_patient_id_dentist_id_status','idx_clinical_assignments_dentist_id_status')"
+      changes:
+        - sqlFile:
+            path: 004_create_clinical_assignments_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/004_create_clinical_assignments_indexes.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

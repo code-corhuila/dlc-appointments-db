@@ -1,0 +1,27 @@
+# Environment migrator: run the owned Liquibase changes against the platform PostgreSQL.
+# The disposable verification fixture is deploy/compose.yml.
+services:
+  appointments-db-migrate:
+    image: ${DLC_LIQUIBASE_IMAGE:-liquibase/liquibase:4.33.0}
+    profiles: [tooling]
+    working_dir: /workspace
+    volumes:
+      - ../:/workspace:ro
+    secrets:
+      - appointments_migrator_password
+    environment:
+      DLC_ENVIRONMENT: ${DLC_ENVIRONMENT:?Set DLC_ENVIRONMENT to dev, qa or prod}
+      DLC_POSTGRES_HOST: ${DLC_POSTGRES_HOST:-dlc-postgres}
+      DLC_POSTGRES_DB: ${DLC_POSTGRES_DB:-di_lucca}
+    networks: [platform]
+    entrypoint: ["/bin/sh", "/workspace/deploy/run-migration.sh"]
+    command: ["update"]
+
+secrets:
+  appointments_migrator_password:
+    file: ${APPOINTMENTS_MIGRATOR_PASSWORD_FILE:?Set the migrator password file of this environment}
+
+networks:
+  platform:
+    name: ${DLC_PLATFORM_NETWORK:-platform}
+    external: true
