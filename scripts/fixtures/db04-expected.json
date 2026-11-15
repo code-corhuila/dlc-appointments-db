@@ -1,0 +1,53 @@
+{
+  "changesets": [
+    {
+      "id": "001-appointments-create-schema",
+      "author": "bsbedoya",
+      "filename": "01_ddl/01_schemas/changelog.yaml"
+    },
+    {
+      "id": "002-appointments-create-appointments",
+      "author": "bsbedoya",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "003-appointments-create-dentist-schedules",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "004-appointments-create-outbox-events",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    },
+    {
+      "id": "005-appointments-create-outbox-events-indexes",
+      "author": "LuisBonilla2260",
+      "filename": "01_ddl/10_indexes/changelog.yaml"
+    },
+    {
+      "id": "006-appointments-grant-runtime-scheduling",
+      "author": "LuisBonilla2260",
+      "filename": "03_dcl/01_grants/changelog.yaml"
+    }
+  ],
+  "schemaPresent": true,
+  "schemaOwner": "bootstrap_test",
+  "relations": [
+    "appointments.appointments:r",
+    "appointments.availability_intervals:r",
+    "appointments.blocked_intervals:r",
+    "appointments.dentist_schedules:r",
+    "appointments.ex_appointments_dentist_overlap:i",
+    "appointments.ex_availability_intervals_schedule_overlap:i",
+    "appointments.ex_blocked_intervals_schedule_overlap:i",
+    "appointments.idx_outbox_events_next_attempt_at:i",
+    "appointments.outbox_events:r",
+    "appointments.pk_appointments:i",
+    "appointments.pk_availability_intervals:i",
+    "appointments.pk_blocked_intervals:i",
+    "appointments.pk_dentist_schedules:i",
+    "appointments.pk_outbox_events:i",
+    "appointments.uk_dentist_schedules_dentist_id:i"
+  ]
+}

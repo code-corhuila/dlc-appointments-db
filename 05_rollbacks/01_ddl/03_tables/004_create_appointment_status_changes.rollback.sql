@@ -1,0 +1,1 @@
+DROP TABLE appointments.appointment_status_changes RESTRICT;

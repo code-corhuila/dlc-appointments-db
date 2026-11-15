@@ -1,0 +1,19 @@
+name: DB bootstrap verification
+on:
+  pull_request:
+  push:
+    branches: [develop]
+permissions:
+  contents: read
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify include structure
+        shell: pwsh
+        run: ./scripts/verify-db.ps1 -StaticOnly
+      - name: Verify ephemeral PostgreSQL and Liquibase lifecycle
+        shell: pwsh
+        run: ./scripts/verify-db.ps1

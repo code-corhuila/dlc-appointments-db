@@ -1,0 +1,21 @@
+{
+  "changesets": [
+    {
+      "id": "001-appointments-create-schema",
+      "author": "bsbedoya",
+      "filename": "01_ddl/01_schemas/changelog.yaml"
+    },
+    {
+      "id": "002-appointments-create-appointments",
+      "author": "bsbedoya",
+      "filename": "01_ddl/03_tables/changelog.yaml"
+    }
+  ],
+  "schemaPresent": true,
+  "schemaOwner": "bootstrap_test",
+  "relations": [
+    "appointments.appointments:r",
+    "appointments.ex_appointments_dentist_overlap:i",
+    "appointments.pk_appointments:i"
+  ]
+}

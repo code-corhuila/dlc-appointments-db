@@ -1,0 +1,3 @@
+DROP INDEX appointments.idx_appointments_created_at_appointment_id RESTRICT;
+DROP INDEX appointments.idx_appointments_patient_id_start_at RESTRICT;
+DROP INDEX appointments.idx_appointments_dentist_id_start_at RESTRICT;
